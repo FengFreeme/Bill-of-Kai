@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        仅用于 Activity 窗口的启动底色（避免冷启动闪黑屏）。
+        业务配色一律定义在 core:design 的 PaletteDef.kt 中，不要放这里 ——
+        否则无法随 3 套主题 × 深浅双模动态切换。
+    -->
+    <color name="launcher_bg">#F2FAF7</color>
+</resources>

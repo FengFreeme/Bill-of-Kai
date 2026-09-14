@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  feature 模块清单（merge 进 app）。
+  页面导航由 app 的 NavHost 组装，本模块不单独声明 Activity。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

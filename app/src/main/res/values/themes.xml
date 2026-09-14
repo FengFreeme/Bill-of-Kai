@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        透明状态栏基础主题：真正的视觉与状态栏图标着色由 Compose 的 BillOfKaiTheme 控制
+        （见 core/design/theme/Theme.kt 的 SyncSystemBars），此处只负责把系统栏背景置透明，
+        让液态背景能透到屏幕边缘。
+    -->
+    <style name="Theme.BillOfKai" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

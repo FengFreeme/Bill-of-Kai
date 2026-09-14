@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  data 模块组件声明（merge 进 app）。
+  M4 在此注册 NotificationListener；SmsReceiver / CaptureForegroundService / SmsScanWorker 在 M5/M6 补充。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        前台保活服务所需权限（普通权限，无需运行时申请）。
+        因 targetSdk=35，必须声明 FOREGROUND_SERVICE 与对应类型权限，
+        否则在 Android 14+ 启动前台服务会抛 SecurityException。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+        <service
+            android:name="com.kai.bill.data.capture.notification.KaiNotificationListener"
+            android:exported="true"
+            android:label="@string/notification_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!--
+            前台保活服务：辅助通知监听在后台存活，不保证监听永久在线。
+            foregroundServiceType=dataSync 对应 FOREGROUND_SERVICE_DATA_SYNC 权限，
+            满足 Android 14/15 对前台服务类型的强制要求。
+        -->
+        <service
+            android:name="com.kai.bill.data.service.CaptureForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>

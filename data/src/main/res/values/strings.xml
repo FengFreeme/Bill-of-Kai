@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 系统「通知使用权」列表中展示的服务名 -->
+    <string name="notification_listener_label">小凯记账 · 通知读取</string>
+    <!-- 前台保活服务相关 -->
+    <string name="capture_channel_name">采集保活</string>
+    <string name="capture_channel_desc">保持通知监听在后台运行</string>
+    <string name="capture_notif_title">小凯记账采集中</string>
+    <string name="capture_notif_text">正在后台监听账单通知</string>
+</resources>
