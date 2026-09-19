@@ -47,6 +47,15 @@ class CategoryManageViewModel @Inject constructor(
     private val editing = MutableStateFlow<CategoryEditTarget?>(null)
     private val errorMessage = MutableStateFlow<String?>(null)
 
+    /**
+     * 进入页面时要定位的一级分类（由 [focusOn] 写入）。
+     *
+     * 用状态流而非普通字段：分类树是异步流，进页面时可能还没到位，
+     * 目标得先存下来，等树到了再一次性应用。
+     */
+    private val focusTargetId = MutableStateFlow<Long?>(null)
+    private var focusApplied = false
+
     private val tree = type.flatMapLatest { t ->
         categoryRepository.observeAll().map { all ->
             all.filter { it.type == t }.toCategoryTree()
@@ -74,17 +83,26 @@ class CategoryManageViewModel @Inject constructor(
     )
 
     init {
-        // 默认展开启用二级的一级分类，仅在首次拿到数据时初始化一次
+        // 默认展开启用二级的一级分类，只在首次拿到数据时初始化一次；
+        // 若带着「要定位的大类」进来（见 [focusOn]），则改为只展开它 + 直接弹新增框。
         viewModelScope.launch {
-            tree.collect { nodes ->
-                if (!expandedInitialized) {
-                    expandedInitialized = true
-                    expandedIds.value = nodes
-                        .filter { it.children.isNotEmpty() }
-                        .map { it.parent.id }
-                        .toSet()
+            combine(tree, focusTargetId) { nodes, target -> nodes to target }
+                .collect { (nodes, target) ->
+                    if (target != null) {
+                        // 树里还没有这个大类就先不动，等它在后续发射里出现
+                        val node = nodes.firstOrNull { it.parent.id == target } ?: return@collect
+                        if (focusApplied) return@collect
+                        focusApplied = true
+                        expandedIds.value = setOf(target)
+                        editing.value = CategoryEditTarget.NewChild(target, node.parent.name)
+                    } else if (!expandedInitialized) {
+                        expandedInitialized = true
+                        expandedIds.value = nodes
+                            .filter { it.children.isNotEmpty() }
+                            .map { it.parent.id }
+                            .toSet()
+                    }
                 }
-            }
         }
     }
 
@@ -96,6 +114,9 @@ class CategoryManageViewModel @Inject constructor(
         expandedIds.value = emptySet()
         editing.value = null
         errorMessage.value = null
+        // 主动切类型说明不再关心进来时要定位的大类，清掉它，恢复「默认全展开」
+        focusTargetId.value = null
+        focusApplied = false
     }
 
     fun toggleExpand(parentId: Long) {
@@ -104,6 +125,17 @@ class CategoryManageViewModel @Inject constructor(
         } else {
             expandedIds.value + parentId
         }
+    }
+
+    /**
+     * 定位到某个一级分类：只展开它，并直接弹出「在它下面新增」。
+     *
+     * 从记一笔某个大类的二级网格点「＋」进来时用。没有这一步，分类管理只是普通打开，
+     * 用户新增出来的分类会追加到同级末尾（列表最后一行），而不是落在这个大类下面。
+     */
+    fun focusOn(parentId: Long) {
+        if (parentId <= 0L) return
+        focusTargetId.value = parentId
     }
 
     // ---- 编辑对话框 ----

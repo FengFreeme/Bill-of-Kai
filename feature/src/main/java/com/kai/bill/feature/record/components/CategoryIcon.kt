@@ -85,6 +85,8 @@ private val ICON_KEY_TO_DRAWABLE = mapOf(
     "create" to "ic_create",
     "receipt" to "ic_receipt",
     "arrow-undo" to "ic_arrow_undo",
+    "arrow-down" to "ic_arrow_down",
+    "arrow-up" to "ic_arrow_up",
 )
 
 /** getIdentifier 较慢，按 drawable 名缓存，避免分类网格首帧反复查资源。 */

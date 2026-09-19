@@ -15,7 +15,7 @@ import com.kai.bill.domain.model.CategoryNode
  * @property billId 编辑目标账单主键；0 表示新增
  * @property isEditing 是否编辑态
  * @property type 当前账单类型（支出 / 收入）
- * @property amountText 已输入金额（元字符串）
+ * @property amountText 已输入金额（元字符串）；可含 `+` / `-` 加减算式（键盘的 +/− 键），如 `"12+8"`
  * @property amountCents 由 [amountText] 推导的金额（分）
  * @property categoryId 选中的分类 ID
  * @property accountId 选中的账户 ID

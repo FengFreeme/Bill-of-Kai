@@ -94,6 +94,25 @@ class AppearanceViewModel @Inject constructor(
     }
 
     /**
+     * 保存背景图的取景（缩放 + 位置）。
+     *
+     * 三个值一起写：它们描述同一张图的取景，分开写会出现「位置是新值、缩放还是旧值」的中间态。
+     *
+     * @param scale 缩放倍数，夹在 1~[MAX_BACKGROUND_SCALE]
+     * @param offsetX 水平位置，夹在 -1~1
+     * @param offsetY 垂直位置，夹在 -1~1
+     */
+    fun onBackgroundTransformChanged(scale: Float, offsetX: Float, offsetY: Float) {
+        viewModelScope.launch {
+            prefs.updateBackgroundTransform(
+                scale = scale.coerceIn(1f, MAX_BACKGROUND_SCALE),
+                offsetX = offsetX.coerceIn(-1f, 1f),
+                offsetY = offsetY.coerceIn(-1f, 1f)
+            )
+        }
+    }
+
+    /**
      * 把选中的图片复制进私有目录并返回文件路径。
      *
      * 文件名带时间戳：路径变化可让 Coil 的缓存自然失效，

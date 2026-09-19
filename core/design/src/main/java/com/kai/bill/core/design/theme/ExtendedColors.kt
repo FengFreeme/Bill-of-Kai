@@ -21,13 +21,19 @@ import androidx.compose.ui.graphics.Color
  * @property expense 支出金额色，珊瑚红
  * @property income 收入金额色，薄荷绿
  * @property neutral 转账 / 不计入统计的中性灰
- * @property alert 超支 / 警示色，鲜红（非珊瑚粉），用于预算超支提示与进度条告警
+ * @property alert 超支 / 警示色，鲜红（非珊瑚粉），用于预算超支提示与进度条告警。
+ *           预算进度色阶的**危险端**也复用它 —— 不再造一个几乎一样的红
+ * @property progressSafe 预算进度色阶的「余量充足」端，浅绿
+ * @property progressWarn 预算进度色阶的「开始紧张」端，琥珀。
+ *           色阶的中间锚点，理由见 `KaiProgressBar`：绿直接插值到红会经过一段发灰的浊色
  */
 data class ExtendedColors(
     val expense: Color,
     val income: Color,
     val neutral: Color,
-    val alert: Color
+    val alert: Color,
+    val progressSafe: Color,
+    val progressWarn: Color
 )
 
 /**

@@ -5,8 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kai.bill.core.common.device.Rom
 import com.kai.bill.core.common.device.RomDetector
+import com.kai.bill.core.common.overlay.ReviewCardOverlay
+import com.kai.bill.core.common.ext.isAccessibilityServiceEnabled
 import com.kai.bill.core.common.ext.isIgnoringBatteryOptimizations
 import com.kai.bill.core.common.ext.isNotificationListenerEnabled
+import com.kai.bill.core.common.ext.openAccessibilitySettings
 import com.kai.bill.core.common.ext.openAppDetailSettings
 import com.kai.bill.core.common.ext.openNotificationListenerSettings
 import com.kai.bill.core.common.ext.openOemAutoStartSettings
@@ -32,7 +35,8 @@ import javax.inject.Inject
 @HiltViewModel
 class PermissionViewModel @Inject constructor(
     application: Application,
-    private val kaiPrefs: KaiPrefs
+    private val kaiPrefs: KaiPrefs,
+    private val reviewCardOverlay: ReviewCardOverlay
 ) : AndroidViewModel(application) {
 
     /** 采集链路状态（连接态 / 最近成功时间 / 主开关），供页面展示与开关绑定。 */
@@ -47,6 +51,7 @@ class PermissionViewModel @Inject constructor(
         PermissionUiState(
             rom = rom,
             listenerEnabled = false,
+            accessibilityGranted = false,
             batteryOptimized = true,
             steps = PermissionGuideSteps.forRom(rom)
         )
@@ -65,8 +70,33 @@ class PermissionViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 listenerEnabled = ctx.isNotificationListenerEnabled(),
+                accessibilityGranted = ctx.isAccessibilityServiceEnabled(),
                 batteryOptimized = !ctx.isIgnoringBatteryOptimizations()
             )
+        }
+    }
+
+    /**
+     * 测试确认卡片：用**最近一笔账单**把悬浮卡片显示出来。
+     *
+     * 存在的理由：这个功能曾经「静默不生效」过 —— 卡片一次都没弹出来，
+     * 而系统既不抛异常也不留日志，只能靠反复付真钱去试。
+     * 给一个不花钱的验证入口，是把「可验证性」补回来。
+     */
+    fun testCard() {
+        viewModelScope.launch {
+            val shown = runCatching { reviewCardOverlay.showLatest() }.getOrDefault(false)
+            _uiState.update {
+                it.copy(
+                    cardTestHint = if (shown) {
+                        "卡片已显示。没看到？请确认无障碍服务处于「正常识别中」。"
+                    } else {
+                        // 不猜原因：真正的原因（NO_SERVICE / NO_BILL / FAILED: …）
+                        // 由悬浮层实现写进「卡片投递结果」，这里只负责指过去。
+                        "没能显示，原因见下方「卡片投递结果」。"
+                    }
+                )
+            }
         }
     }
 
@@ -80,6 +110,7 @@ class PermissionViewModel @Inject constructor(
         val ctx = getApplication<Application>()
         when (action) {
             GuideAction.LISTENER_SETTINGS -> ctx.openNotificationListenerSettings()
+            GuideAction.ACCESSIBILITY_SETTINGS -> ctx.openAccessibilitySettings()
             GuideAction.BATTERY_OPTIMIZATION -> ctx.requestIgnoreBatteryOptimizations()
             GuideAction.AUTO_START -> ctx.openOemAutoStartSettings()
             GuideAction.APP_DETAILS -> ctx.openAppDetailSettings()
@@ -96,12 +127,18 @@ class PermissionViewModel @Inject constructor(
  *
  * @property rom 当前机型 ROM，仅用于展示
  * @property listenerEnabled 通知使用权是否已授予（实时检测）
+ * @property accessibilityGranted 无障碍服务是否已在系统设置中启用（实时检测）。
+ *           注意它只回答「系统里勾选了没有」；「服务此刻是否真的在跑」由服务自己写入
+ *           `CaptureState.accessibilityEnabled`，两者不一致本身就是排查线索
  * @property batteryOptimized true 表示仍被电池优化限制（需引导关闭）
  * @property steps 当前 ROM 下的引导步骤列表
+ * @property cardTestHint 「测试确认卡片」的结果提示；空串表示还没点过
  */
 data class PermissionUiState(
     val rom: Rom,
     val listenerEnabled: Boolean,
+    val accessibilityGranted: Boolean,
     val batteryOptimized: Boolean,
-    val steps: List<GuideStep>
+    val steps: List<GuideStep>,
+    val cardTestHint: String = ""
 )

@@ -13,6 +13,7 @@ import com.kai.bill.domain.model.stats.BudgetProgress
 import com.kai.bill.domain.model.stats.Overview
 import com.kai.bill.domain.repository.AccountRepository
 import com.kai.bill.domain.repository.CategoryRepository
+import com.kai.bill.domain.repository.PendingBillRepository
 import com.kai.bill.domain.time.Clock
 import com.kai.bill.domain.usecase.bill.ObserveBillsUseCase
 import com.kai.bill.domain.usecase.budget.ObserveBudgetProgressUseCase
@@ -54,6 +55,7 @@ class HomeViewModel @Inject constructor(
     observeBudgetProgress: ObserveBudgetProgressUseCase,
     categoryRepository: CategoryRepository,
     accountRepository: AccountRepository,
+    pendingBillRepository: PendingBillRepository,
     private val clock: Clock,
     private val kaiPrefs: KaiPrefs
 ) : ViewModel() {
@@ -123,6 +125,20 @@ class HomeViewModel @Inject constructor(
             initialValue = false
         )
 
+    /**
+     * 待确认账单条数：首页只在 > 0 时展示「有 N 笔待确认」卡片。
+     *
+     * 用 `observeCount()` 的 `COUNT(*)` 而不是拉列表算长度 —— 首页只需要一个数字，
+     * 没必要把带通知原文的整表读进内存（待确认列表页才需要明细）。
+     */
+    val pendingCount: StateFlow<Int> = pendingBillRepository.observeCount()
+        .flowOn(Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = 0
+        )
+
     private fun buildDailyGroups(bills: List<Bill>, today: LocalDate): List<DailyGroup> {
         return bills
             .groupBy { Instant.ofEpochMilli(it.tradeTimeMillis).atZone(zone).toLocalDate() }
@@ -182,4 +198,6 @@ fun SourceType.sourceDisplayName(): String = when (this) {
     SourceType.NOTIFICATION -> "自动记账"
     SourceType.SMS -> "短信记账"
     SourceType.MANUAL -> "手动记账"
+    SourceType.ACCESSIBILITY -> "分类识别"
+    SourceType.SCREENSHOT -> "截图记账"
 }

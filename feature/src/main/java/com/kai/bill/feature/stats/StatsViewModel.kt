@@ -200,21 +200,12 @@ class StatsViewModel @Inject constructor(
     /**
      * 打开筛选面板。
      *
-     * 默认草稿为「当前类型下全部一级分类 + 全部账户 + 未指定账户」。
-     * 若已有生效的筛选，则把展开后的二级 id 还原成一级 id 回填，
-     * 保证 UI 只显示一级分类的勾选状态。
+     * 草稿**每次都重置为「什么都不勾」**（分类 / 账户 /「未指定账户」全不选），
+     * 勾什么由用户自己决定；也不回填当前生效的筛选，避免面板一打开就是上次条件的子集。
+     * 生效中的条件在页面摘要条上有展示，那里可以一键清除。
      */
     fun openFilterPanel() {
-        _filterDraft.value = filter.value?.let { current ->
-            StatsFilterDraft(
-                type = current.type ?: statType.value,
-                categoryIds = current.categoryIds
-                    .filter { id -> categories.value.any { it.parentId == null && it.id == id } }
-                    .toSet(),
-                accountIds = current.accountIds,
-                includeUnspecifiedAccount = current.includeUnspecifiedAccount
-            )
-        } ?: defaultDraft(statType.value)
+        _filterDraft.value = defaultDraft(statType.value)
         _filterPanelOpen.value = true
     }
 
@@ -223,7 +214,7 @@ class StatsViewModel @Inject constructor(
     }
 
     /**
-     * 面板内切换类型：同步切换统计页类型，并自动全选新类型下的一级分类。
+     * 面板内切换类型：同步切换统计页类型，并把草稿重置为「什么都不勾」。
      */
     fun onDraftTypeSelected(type: BillType?) {
         val effective = type ?: statType.value
@@ -259,6 +250,43 @@ class StatsViewModel @Inject constructor(
         _filterDraft.update { it.copy(includeUnspecifiedAccount = !it.includeUnspecifiedAccount) }
     }
 
+    /**
+     * 一键全选分类（只选一级，二级由 [applyFilterDraft] 展开）。
+     *
+     * 全选与「一个都不勾」在查询里都表示不限分类，两种状态点「查看结果」都不会筛掉数据。
+     */
+    fun onDraftAllCategoriesSelected() {
+        val draft = _filterDraft.value
+        val type = draft.type
+        _filterDraft.value = draft.copy(
+            categoryIds = categories.value
+                .filter { it.parentId == null && (type == null || it.type == type) }
+                .map { it.id }
+                .toSet()
+        )
+    }
+
+    /** 一键全选账户；顺带勾上「未指定账户」，否则全选会把「未指定账户」的流水排除掉 */
+    fun onDraftAllAccountsSelected() {
+        _filterDraft.value = _filterDraft.value.copy(
+            accountIds = accounts.value.map { it.id }.toSet(),
+            includeUnspecifiedAccount = true
+        )
+    }
+
+    /** 取消全选分类：清空勾选（空集合 = 不限分类，与全选在查询里等价） */
+    fun onDraftAllCategoriesCleared() {
+        _filterDraft.value = _filterDraft.value.copy(categoryIds = emptySet())
+    }
+
+    /** 取消全选账户：账户与「未指定账户」同属一组，一起清掉 */
+    fun onDraftAllAccountsCleared() {
+        _filterDraft.value = _filterDraft.value.copy(
+            accountIds = emptySet(),
+            includeUnspecifiedAccount = false
+        )
+    }
+
     fun onDraftReset() {
         _filterDraft.value = defaultDraft(statType.value)
     }
@@ -266,25 +294,25 @@ class StatsViewModel @Inject constructor(
     /** 应用草稿并关闭面板 */
     fun applyFilterDraft() {
         val draft = _filterDraft.value
-        // UI 只选一级，实际查询需要把二级也包含进来
-        val expandedCategoryIds = draft.categoryIds
-            .flatMap { rootId -> categories.value.categoryIdsWithChildren(rootId) }
-            .toSet()
         val allTopLevelIds = categories.value
             .filter { it.parentId == null && it.type == draft.type }
             .map { it.id }
             .toSet()
-        val allCategoryIds = allTopLevelIds
+        val allAccountIds = accounts.value.map { it.id }.toSet()
+        // UI 只选一级，实际查询需要把二级也包含进来
+        val expandedCategoryIds = draft.categoryIds
             .flatMap { rootId -> categories.value.categoryIdsWithChildren(rootId) }
             .toSet()
-        val allAccountIds = accounts.value.map { it.id }.toSet()
 
-        // 全选等价不筛选：走 StatsDao SQL 聚合，更高效
-        filter.value = if (
-            expandedCategoryIds == allCategoryIds &&
-            draft.accountIds == allAccountIds &&
-            draft.includeUnspecifiedAccount
-        ) {
+        // 空集合 = 不限（见 `BillFilter.matches`）：分类一个不勾就是「不限分类」，
+        // 账户一个不勾且不含「未指定账户」就是「不限账户」。
+        // 两组都不构成限制时等价不筛选，走 StatsDao 的 SQL 聚合更高效。
+        val noCategoryLimit = draft.categoryIds.isEmpty() ||
+            draft.categoryIds.containsAll(allTopLevelIds)
+        val noAccountLimit = !draft.includeUnspecifiedAccount &&
+            (draft.accountIds.isEmpty() || draft.accountIds.containsAll(allAccountIds))
+
+        filter.value = if (noCategoryLimit && noAccountLimit) {
             null
         } else {
             draft.copy(categoryIds = expandedCategoryIds).toFilter()
@@ -308,20 +336,15 @@ class StatsViewModel @Inject constructor(
     }
 
     /**
-     * 构造「全选」默认草稿：当前类型下全部一级分类 + 全部账户 + 未指定账户。
+     * 构造默认草稿：分类 / 账户 /「未指定账户」**一律不勾**，由用户自己选。
+     *
+     * 空集合在查询里就表示「不限」（见 `BillFilter.matches`），所以「什么都不勾 + 查看结果」
+     * 等价于不筛选，不会把数据筛成空。
+     *
+     * 只有 [type] 跟随统计页维度：面板里那两个类型标签和页面的支出 / 收入是同一个东西
+     * （点它会切页面维度），不算用户勾的筛选条件。
      */
-    private fun defaultDraft(type: BillType): StatsFilterDraft {
-        val topLevelIds = categories.value
-            .filter { it.parentId == null && it.type == type }
-            .map { it.id }
-            .toSet()
-        return StatsFilterDraft(
-            type = type,
-            categoryIds = topLevelIds,
-            accountIds = accounts.value.map { it.id }.toSet(),
-            includeUnspecifiedAccount = true
-        )
-    }
+    private fun defaultDraft(type: BillType): StatsFilterDraft = StatsFilterDraft(type = type)
 
     private fun rangeOf(kind: DateRangeKind, anchorMillis: Long): DateRange {
         val raw = when (kind) {

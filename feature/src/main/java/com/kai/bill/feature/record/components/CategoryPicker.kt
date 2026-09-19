@@ -67,7 +67,11 @@ private const val SUB_GRID_ANIM_MILLIS = 300
  * @param expandedParentId 当前展开的一级分类 ID；null 表示该级无二级或未展开
  * @param onSelect 选中回调（用于二级或无子分类的一级）
  * @param onParentClick 点击一级：选中并切换展开/收起
- * @param onManageCategory 点击「＋」：跳分类管理
+ * @param onManageCategory 点击「＋」：跳分类管理；入参是「＋」所在的**一级分类 id**，
+ *   分类管理据此定位到对应大类并直接在其下新增，用户不必自己再找一遍
+ * @param allowAddCategory 是否在二级网格末尾显示「＋新增」。
+ *   确认卡片的悬浮层必须传 `false`：那里点「＋」要跳转分类管理，而**从悬浮层
+ *   启动 Activity 属于后台启动**，会被系统静默拦截 —— 留着就是一个点了没反应的死按钮。
  * @param modifier 外部修饰符
  */
 @Composable
@@ -77,7 +81,8 @@ fun CategoryPicker(
     expandedParentId: Long?,
     onSelect: (Long) -> Unit,
     onParentClick: (Long) -> Unit,
-    onManageCategory: () -> Unit,
+    onManageCategory: (Long) -> Unit,
+    allowAddCategory: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val expandedIndex = remember(tree, expandedParentId) {
@@ -86,6 +91,10 @@ fun CategoryPicker(
     // 没有二级分类的一级不占二级区，避免展开出一片空白
     val expandedChildren = remember(tree, expandedIndex) {
         tree.getOrNull(expandedIndex)?.children.orEmpty()
+    }
+    /** 当前展开的那个一级分类 id：二级网格里的「＋」要把它带给分类管理 */
+    val ownerParentId = remember(tree, expandedIndex) {
+        tree.getOrNull(expandedIndex)?.parent?.id
     }
     val rows = remember(tree) { tree.chunked(COLUMNS) }
 
@@ -142,7 +151,9 @@ fun CategoryPicker(
                     categories = expandedChildren,
                     selectedId = selectedId,
                     onSelect = onSelect,
-                    onManageCategory = onManageCategory,
+                    // 「＋」带着所属大类 id 走，分类管理要定位到它
+                    onManageCategory = { ownerParentId?.let(onManageCategory) },
+                    allowAddCategory = allowAddCategory,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
@@ -203,9 +214,13 @@ private fun SubCategoryGrid(
     selectedId: Long?,
     onSelect: (Long) -> Unit,
     onManageCategory: () -> Unit,
+    allowAddCategory: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val slots: List<Category?> = remember(categories) { categories + null }
+    // 「＋」只在允许时补位：确认卡片的悬浮层里不能跳转，显示出来就是死按钮
+    val slots: List<Category?> = remember(categories, allowAddCategory) {
+        if (allowAddCategory) categories + null else categories
+    }
     val rows = remember(slots) { slots.chunked(COLUMNS) }
 
     Column(

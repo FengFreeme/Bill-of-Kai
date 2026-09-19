@@ -2,7 +2,9 @@ package com.kai.bill.feature.record
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kai.bill.domain.calculator.AmountExpression
 import com.kai.bill.domain.calculator.MoneyText
+import com.kai.bill.domain.model.AccountType
 import com.kai.bill.domain.model.Bill
 import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.toCategoryTree
@@ -100,7 +102,7 @@ class RecordViewModel @Inject constructor(
         errorMessage,
         expandedParentId
     ) { tree, accs, form, error, parentId ->
-        val cents = MoneyText.textToCents(form.amountText)
+        val cents = AmountExpression.toCents(form.amountText)
         RecordUiState(
             billId = editingId,
             isEditing = isEditing,
@@ -147,7 +149,14 @@ class RecordViewModel @Inject constructor(
         viewModelScope.launch {
             accounts.collect { list ->
                 if (accountId.value == null && list.isNotEmpty()) {
-                    accountId.value = list.first().id
+                    // 默认选中「支付宝」而非排序第一个：
+                    // 预置账户按 sortOrder 排序时现金在最前，但现金已很少使用，
+                    // 每次记账都要手动改一次很烦。找不到支付宝时再退回第一个。
+                    // 注意这里改的是选中逻辑而非预置数据的排序号 ——
+                    // 改排序号对已安装的用户不生效（预置数据只在首次播种时写入）。
+                    accountId.value = (
+                        list.firstOrNull { it.type == AccountType.ALIPAY } ?: list.first()
+                        ).id
                 }
             }
         }
@@ -175,22 +184,49 @@ class RecordViewModel @Inject constructor(
 
     fun onTypeChange(newType: BillType) {
         type.value = newType
+        // 转账默认不计入统计（还信用卡、账户互转都不是真实收支）；支出 / 收入默认计入。
+        // 开关仍留给用户：比如「借给朋友 500 想算支出」就可以手动打开。
+        countInStats.value = newType != BillType.TRANSFER
         // 切换类型后分类树重建，清空旧选择，由 collect 默认选中新类型的首个一级分类
         categoryId.value = null
         expandedParentId.value = null
     }
 
+    /**
+     * 键盘输入：[digit] 既可能是数字 / 小数点，也可能是 `+` / `-` 运算符。
+     *
+     * 支持「12+8」这类加减算式（求值见 [AmountExpression]）：金额显示区实时显示求和结果，
+     * 用户不必自己先算好再输。小数位限制只作用于**当前这一项**——
+     * 不能拿整串判断，否则「12.34+5」之后就再也输不进小数了。
+     */
     fun onDigit(digit: String) {
         val cur = amountText.value
-        if (cur.contains(".")) {
-            val decimals = cur.substringAfter(".")
-            if (decimals.length >= 2) return
+        if (digit == "+" || digit == "-") {
+            amountText.value = appendOperator(cur, digit)
+            return
         }
-        amountText.value = when {
-            cur == "0" && digit != "." -> digit
-            cur.isEmpty() && digit == "." -> "0."
-            else -> cur + digit
+        val term = cur.substringAfterLast('+').substringAfterLast('-')
+        if (term.contains(".") && term.substringAfter(".").length >= 2) return
+        val newTerm = when {
+            term == "0" && digit != "." -> digit
+            term.isEmpty() && digit == "." -> "0."
+            else -> term + digit
         }
+        amountText.value = cur.dropLast(term.length) + newTerm
+    }
+
+    /**
+     * 追加运算符。
+     *
+     * - 空串不加：算式不能以运算符开头；
+     * - 末尾已是指向别的运算符时**替换**，避免拼出「12+-」；
+     * - 末项以小数点结尾时补个 0（「12.」→「12.0+」），保证每项都合法。
+     */
+    private fun appendOperator(cur: String, op: String): String = when {
+        cur.isEmpty() -> cur
+        cur.last() == '+' || cur.last() == '-' -> cur.dropLast(1) + op
+        cur.last() == '.' -> cur + "0" + op
+        else -> cur + op
     }
 
     fun onDelete() {

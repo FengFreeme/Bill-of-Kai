@@ -24,11 +24,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kai.bill.core.common.percent.PercentFormatter
 import com.kai.bill.core.design.theme.AppTheme
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -52,6 +53,17 @@ private const val FULL_SWEEP = 360f
 /** 高亮时引线的加粗倍数 */
 private const val SELECTED_STROKE_FACTOR = 2f
 
+/** 高亮扇区在**原地**加粗的倍数；配合 [SELECTED_STROKE_FACTOR] 形成「变粗」而非「弹出」 */
+private const val SELECTED_WIDTH_FACTOR = 1.45f
+
+/**
+ * 默认显示标签的最小占比。
+ *
+ * 占比过小的扇区如果也画标签，几个小扇区的引线会在圆外挤成一团；
+ * 这类小扇区改为**点击选中后**才显示标签与引线。
+ */
+private const val MIN_LABEL_RATIO = 0.05f
+
 /**
  * 环形图布局尺寸（单位 px）。
  *
@@ -65,17 +77,18 @@ private class DonutMetrics(
     val stubRadius: Float,
     val ringWidth: Float,
     val labelPad: Float,
-    val explode: Float,
+    /** 命中检测的容差：留一点余量，高亮扇区加粗后也点得到 */
+    val hitTolerance: Float,
     val canvasW: Float,
     val canvasH: Float
 ) {
-    /** 点击是否落在圆环（含高亮炸开）范围内 */
+    /** 点击是否落在圆环范围内（含容差） */
     fun isOnRing(offset: Offset): Boolean {
         val dx = offset.x - center.x
         val dy = offset.y - center.y
         val distance = sqrt(dx * dx + dy * dy)
-        val inner = ringRadius - ringWidth / 2f - explode
-        val outer = ringRadius + ringWidth / 2f + explode
+        val inner = ringRadius - ringWidth / 2f - hitTolerance
+        val outer = ringRadius + ringWidth / 2f + hitTolerance
         return distance in inner..outer
     }
 
@@ -98,7 +111,7 @@ private class DonutMetrics(
             radialStub: Float,
             sideReserve: Float,
             labelPad: Float,
-            explode: Float
+            hitTolerance: Float
         ): DonutMetrics {
             val maxByWidth = (size.width / 2f - sideReserve - ringWidth / 2f).coerceAtLeast(24f)
             val maxByHeight = size.height / 2f * 0.92f - ringWidth / 2f
@@ -111,7 +124,7 @@ private class DonutMetrics(
                 stubRadius = outerRadius + radialStub,
                 ringWidth = ringWidth,
                 labelPad = labelPad,
-                explode = explode,
+                hitTolerance = hitTolerance,
                 canvasW = size.width,
                 canvasH = size.height
             )
@@ -147,6 +160,8 @@ private data class LabelGeom(
     val index: Int,
     val layout: TextLayoutResult,
     val isRight: Boolean,
+    /** 是否位于圆心上半：标签不得越过圆心水平线，否则会折到别的象限去 */
+    val isTop: Boolean,
     val textX: Float,
     val lineEndX: Float,
     val centerY: Float
@@ -160,7 +175,10 @@ private data class LabelGeom(
  * Canvas 自绘的代码量与可控性都更划算。
  *
  * 引线形状固定为**两段**：先沿扇区角度径向引出到环外，再水平（角度 0）进入标签；
- * 标签高度由扇区角度决定，不做额外的角度重排（见 [layoutLabels]）。
+ * 标签高度由扇区角度决定，并被约束在**引线所属象限**内（见 [layoutLabels]）。
+ *
+ * 标签并非全部常显：占比低于 [MIN_LABEL_RATIO] 的扇区默认不标注，
+ * 点击选中后才出现标签与引线，避免小扇区把圆外挤满。
  *
  * 文字用 [rememberTextMeasurer] 量好再画，避免中文字宽估算偏差导致标签出界。
  *
@@ -189,8 +207,10 @@ fun DonutChart(
 
     val ringWidth = 30.dp
     val radialStub = 14.dp
-    val labelPad = 6.dp
-    val explode = 8.dp
+    /** 标签文字贴画布边缘的距离（越小越靠边），同时也决定引线到文字的间隙（取其一半） */
+    val labelPad = 4.dp
+    /** 点击容差（px 在下面换算）；高亮不再炸开，仅用于放宽命中范围 */
+    val hitTolerance = 8.dp
     val minLabelGap = 6.dp
     val sideReserve = 84.dp
     val guideWidth = 1.dp
@@ -203,7 +223,7 @@ fun DonutChart(
     )
 
     Box(
-        modifier = modifier.pointerInput(slices, sideReserve, ringWidth, explode) {
+        modifier = modifier.pointerInput(slices, sideReserve, ringWidth, hitTolerance) {
             detectTapGestures { offset ->
                 val metrics = DonutMetrics.of(
                     size = Size(size.width.toFloat(), size.height.toFloat()),
@@ -211,7 +231,7 @@ fun DonutChart(
                     radialStub = radialStub.toPx(),
                     sideReserve = sideReserve.toPx(),
                     labelPad = labelPad.toPx(),
-                    explode = explode.toPx()
+                    hitTolerance = hitTolerance.toPx()
                 )
                 if (!metrics.isOnRing(offset)) return@detectTapGestures
 
@@ -235,7 +255,7 @@ fun DonutChart(
                 radialStub = radialStub.toPx(),
                 sideReserve = sideReserve.toPx(),
                 labelPad = labelPad.toPx(),
-                explode = explode.toPx()
+                hitTolerance = hitTolerance.toPx()
             )
             val geoms = buildSliceGeoms(slices, metrics)
 
@@ -309,7 +329,13 @@ private fun buildSliceGeoms(slices: List<DonutSlice>, metrics: DonutMetrics): Li
     }
 }
 
-/** 画一个扇区；高亮扇区整体沿中角方向向外炸开 */
+/**
+ * 画一个扇区。
+ *
+ * 高亮采用**原地加粗**：圆心与半径都不动，只是把这一段的环沿径向加厚（内外各扩一半）。
+ * 之前是「沿中角方向整体向外炸开」，那样扇区会脱离圆环、与引线和相邻扇区拉开距离，
+ * 视觉上像弹出来一块；原地加粗则始终贴合圆环，只是变粗一档。
+ */
 private fun DrawScope.drawSlice(
     geom: SliceGeom,
     slices: List<DonutSlice>,
@@ -317,10 +343,10 @@ private fun DrawScope.drawSlice(
     selectedIndex: Int
 ) {
     if (geom.sweep <= 0f) return
-    val offset = if (geom.index == selectedIndex) {
-        Offset(geom.cosA * metrics.explode, geom.sinA * metrics.explode)
+    val strokeWidth = if (geom.index == selectedIndex) {
+        metrics.ringWidth * SELECTED_WIDTH_FACTOR
     } else {
-        Offset.Zero
+        metrics.ringWidth
     }
     drawArc(
         color = slices[geom.index].color,
@@ -329,25 +355,21 @@ private fun DrawScope.drawSlice(
         sweepAngle = (geom.sweep - 1.2f).coerceAtLeast(0.6f),
         useCenter = false,
         topLeft = Offset(
-            metrics.center.x - metrics.ringRadius + offset.x,
-            metrics.center.y - metrics.ringRadius + offset.y
+            metrics.center.x - metrics.ringRadius,
+            metrics.center.y - metrics.ringRadius
         ),
         size = Size(metrics.ringRadius * 2f, metrics.ringRadius * 2f),
-        style = Stroke(width = metrics.ringWidth, cap = StrokeCap.Butt)
+        style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
     )
 }
 
 /**
- * 排布引线标签。
- *
- * **高度完全由扇区角度决定**，不做任何额外的角度重排：
- * `stubPoint.y = cy + sin(midAngle) * stubRadius` 本身就是 `midAngle` 的单调函数，
- * 所以直接拿它当初始高度，同侧顺序天然就是「从上到下」——
- * - 右半（第一、四象限）：角度越大越靠下，即高度随角度增大而降低；
- * - 左半（第二、三象限）：角度越大越靠上，即高度随角度增大而升高。
- *
- * 之后再补一层**最小间距兜底**（[resolveVerticalOverlap]），
- * 只在相邻标签会压在一起时把后面的往下挪，不改变「按角度定位」的整体形态。
+ * 排布引线标签。三条规则：
+ * 1. **标签留在引线所属象限**：上半的标签不越过圆心水平线，下半同理。
+ *    否则第一象限引出的线会把标签折到左下角，看图的人得满屏找对应关系；
+ * 2. **同象限内不重叠**：先按角度定位，再做最小间距防撞（见 [resolveVerticalOverlap]）；
+ * 3. **默认只标注占比 ≥ [MIN_LABEL_RATIO] 的扇区**，小扇区点击后才出现标签，
+ *    避免一堆小扇区的引线糊成一团。
  */
 private fun layoutLabels(
     geoms: List<SliceGeom>,
@@ -361,14 +383,28 @@ private fun layoutLabels(
 ): List<LabelGeom> {
     val drafts = geoms
         .filter { it.sweep > 0f }
+        // 小扇区默认不标注；选中的那个即使占比很小也要显示
+        .filter { it.index == selectedIndex || slices[it.index].ratio >= MIN_LABEL_RATIO }
         .map { geom ->
             val layout = measurer.measure(
-                text = "${slices[geom.index].name} ${(slices[geom.index].ratio * 100).roundToInt()}%",
+                text = "${slices[geom.index].name} ${PercentFormatter.of(slices[geom.index].ratio)}",
                 style = if (geom.index == selectedIndex) selectedStyle else normalStyle
             )
             val halfHeight = layout.size.height / 2f
-            val centerY = geom.stubPoint.y.coerceIn(halfHeight, metrics.canvasH - halfHeight)
-            if (geom.isRight) {
+            val isRight = geom.cosA >= 0f
+            // 屏幕坐标系 y 轴向下：sin < 0 表示在圆心上方
+            val isTop = geom.sinA < 0f
+
+            // 标签中心限制在自己那一半里（上下边界各留出一个半行高）
+            val minCenterY = if (isTop) halfHeight else metrics.center.y + halfHeight
+            val maxCenterY = if (isTop) {
+                (metrics.center.y - halfHeight).coerceAtLeast(minCenterY)
+            } else {
+                (metrics.canvasH - halfHeight).coerceAtLeast(minCenterY)
+            }
+            val centerY = geom.stubPoint.y.coerceIn(minCenterY, maxCenterY)
+
+            if (isRight) {
                 // 右栏文字贴右边缘，水平引线从文字左侧进入
                 val textX = (metrics.canvasW - metrics.labelPad - layout.size.width)
                     .coerceAtLeast(metrics.labelPad)
@@ -376,6 +412,7 @@ private fun layoutLabels(
                     index = geom.index,
                     layout = layout,
                     isRight = true,
+                    isTop = isTop,
                     textX = textX,
                     lineEndX = textX - metrics.labelPad * 0.5f,
                     centerY = centerY
@@ -386,6 +423,7 @@ private fun layoutLabels(
                     index = geom.index,
                     layout = layout,
                     isRight = false,
+                    isTop = isTop,
                     textX = metrics.labelPad,
                     lineEndX = metrics.labelPad + layout.size.width + metrics.labelPad * 0.5f,
                     centerY = centerY
@@ -396,8 +434,13 @@ private fun layoutLabels(
 }
 
 /**
- * 同侧纵向防撞：保持原有顺序，只把被压住的标签往下推；
- * 若整体被推出下边界，再整体上移并从下到上收紧一次。
+ * 同象限纵向防撞。
+ *
+ * 按「左/右 × 上/下」分成四组**分别**处理：只在同一象限内互相让位，绝不跨象限挪动 ——
+ * 跨象限挪动会直接破坏「标签留在自己引线所在象限」这条规则。
+ *
+ * 做法：先把被压住的标签往下推；若整体被推出该象限的下边界，
+ * 再整体回拉、从下到上收紧，保证顺序与最小间距都不被破坏。
  */
 private fun resolveVerticalOverlap(
     drafts: List<LabelGeom>,
@@ -405,52 +448,62 @@ private fun resolveVerticalOverlap(
     minGap: Float
 ): List<LabelGeom> {
     val result = drafts.toMutableList()
-    listOf(true, false).forEach { rightSide ->
-        val indices = result.indices
-            .filter { result[it].isRight == rightSide }
-            .sortedBy { result[it].centerY }
-        if (indices.isEmpty()) return@forEach
 
-        fun pushDown() {
-            var previousBottom = Float.NEGATIVE_INFINITY
-            indices.forEach { index ->
+    listOf(true to true, true to false, false to true, false to false)
+        .forEach { (isRight, isTop) ->
+            val indices = result.indices
+                .filter { result[it].isRight == isRight && result[it].isTop == isTop }
+                .sortedBy { result[it].centerY }
+            if (indices.isEmpty()) return@forEach
+
+            fun minCenterY(half: Float) = if (isTop) half else metrics.center.y + half
+            fun maxCenterY(half: Float) =
+                (if (isTop) metrics.center.y - half else metrics.canvasH - half)
+                    .coerceAtLeast(minCenterY(half))
+
+            fun pushDown() {
+                var previousBottom = Float.NEGATIVE_INFINITY
+                indices.forEach { index ->
+                    val half = result[index].layout.size.height / 2f
+                    val lower = (previousBottom + minGap + half).coerceAtLeast(minCenterY(half))
+                    val y = result[index].centerY
+                        .coerceAtLeast(lower)
+                        .coerceAtMost(maxCenterY(half))
+                    result[index] = result[index].copy(centerY = y)
+                    previousBottom = y + half
+                }
+            }
+
+            pushDown()
+
+            // 溢出该象限下边界时：整体回拉，再从下到上收紧
+            val lastIndex = indices.last()
+            val lastHalf = result[lastIndex].layout.size.height / 2f
+            val overflow = result[lastIndex].centerY + lastHalf - maxCenterY(lastHalf)
+            if (overflow <= 0f) return@forEach
+
+            var nextTop = Float.POSITIVE_INFINITY
+            indices.asReversed().forEach { index ->
                 val half = result[index].layout.size.height / 2f
-                val y = result[index].centerY
-                    .coerceAtLeast(previousBottom + minGap + half)
-                    .coerceIn(half, metrics.canvasH - half)
+                val y = (result[index].centerY - overflow)
+                    .coerceAtMost(nextTop - minGap - half)
+                    .coerceIn(minCenterY(half), maxCenterY(half))
                 result[index] = result[index].copy(centerY = y)
-                previousBottom = y + half
+                nextTop = y - half
             }
         }
-
-        pushDown()
-
-        val lastIndex = indices.last()
-        val overflow = result[lastIndex].centerY +
-            result[lastIndex].layout.size.height / 2f -
-            (metrics.canvasH - metrics.labelPad)
-        if (overflow <= 0f) return@forEach
-
-        // 整体上移溢出量，再从下到上收紧，保证顺序与间距都不被破坏
-        var nextTop = Float.POSITIVE_INFINITY
-        indices.asReversed().forEach { index ->
-            val half = result[index].layout.size.height / 2f
-            val y = (result[index].centerY - overflow)
-                .coerceAtMost(nextTop - minGap - half)
-                .coerceIn(half, metrics.canvasH - half)
-            result[index] = result[index].copy(centerY = y)
-            nextTop = y - half
-        }
-    }
     return result
 }
 
 /**
  * 画一条引线：**径向引出 → 水平（角度 0）进入标签**。
  *
- * 折点的 x 取「径向引出末端」与该高度上「圆环外沿」中更外侧的那个：
- * 正常情况下径向末端已经在环外，折点就是它，看起来就是径向线直接接一段水平线；
- * 只有标签被防撞推到环的横向范围内时，折点才外移到环沿，保证水平段不穿环。
+ * 折点取「径向引出末端」与该高度上「圆环外沿」中更外侧的那个，
+ * 并严格夹在「径向末端」与「标签终点」之间：
+ * 于是两段线都只朝环外方向走，无论标签被防撞推到哪里都不会折回来。
+ *
+ * 折点正好落在径向末端时（绝大多数情况），径向线已经到头，
+ * 就不再折第二次，直接一条斜线连进标签 —— 省掉那个多余的小折角。
  *
  * 高亮扇区的引线用扇区本色并加粗，和标签文字一起高亮。
  */
@@ -469,21 +522,34 @@ private fun DrawScope.drawLeader(
     val lineColor = if (highlighted) sliceColor else guideColor
     val stroke = if (highlighted) guideStroke * SELECTED_STROKE_FACTOR else guideStroke
 
+    // 终点夹取：文字过宽把 lineEndX 顶进环内时，只让引线提前收住，绝不反向折回
+    val endX = if (geom.isRight) {
+        maxOf(label.lineEndX, geom.stubPoint.x)
+    } else {
+        minOf(label.lineEndX, geom.stubPoint.x)
+    }
+
+    // 折点：既要在该高度的环沿之外（不穿环），又不能越过终点（不回头）
     val dy = label.centerY - metrics.center.y
     val halfChord = sqrt((metrics.outerRadius * metrics.outerRadius - dy * dy).coerceAtLeast(0f))
     val elbowX = if (geom.isRight) {
-        maxOf(geom.stubPoint.x, metrics.center.x + halfChord).coerceAtMost(label.lineEndX)
+        maxOf(geom.stubPoint.x, metrics.center.x + halfChord).coerceAtMost(endX)
     } else {
-        minOf(geom.stubPoint.x, metrics.center.x - halfChord).coerceAtLeast(label.lineEndX)
+        minOf(geom.stubPoint.x, metrics.center.x - halfChord).coerceAtLeast(endX)
     }
-    val elbow = Offset(elbowX, label.centerY)
 
     // ① 沿扇区角度径向引出
     drawLine(lineColor, geom.edgePoint, geom.stubPoint, strokeWidth = stroke)
-    // ② 折到标签高度（径向末端已在环外时，这一步只是一小段竖直对齐）
-    drawLine(lineColor, geom.stubPoint, elbow, strokeWidth = stroke)
-    // ③ 水平（角度 0）进入标签
-    drawLine(lineColor, elbow, Offset(label.lineEndX, label.centerY), strokeWidth = stroke)
+
+    if (abs(elbowX - geom.stubPoint.x) <= 1f) {
+        // 径向线已经到头，取消折角：一条斜线直接进入标签
+        drawLine(lineColor, geom.stubPoint, Offset(endX, label.centerY), strokeWidth = stroke)
+    } else {
+        // ② 折到标签高度（折点在环沿外，不会穿环）
+        drawLine(lineColor, geom.stubPoint, Offset(elbowX, label.centerY), strokeWidth = stroke)
+        // ③ 水平（角度 0）进入标签
+        drawLine(lineColor, Offset(elbowX, label.centerY), Offset(endX, label.centerY), strokeWidth = stroke)
+    }
 
     drawText(
         textLayoutResult = label.layout,

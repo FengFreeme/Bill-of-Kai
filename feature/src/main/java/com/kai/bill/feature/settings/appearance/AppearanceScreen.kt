@@ -22,17 +22,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
+import com.kai.bill.core.common.percent.PercentFormatter
+import com.kai.bill.core.design.component.BackgroundImage
 import com.kai.bill.core.design.component.ListCard
 import com.kai.bill.core.design.component.SegmentTabs
 import com.kai.bill.core.design.theme.AppPalette
@@ -40,8 +41,6 @@ import com.kai.bill.core.design.theme.AppTheme
 import com.kai.bill.core.design.theme.BillOfKaiTheme
 import com.kai.bill.core.design.theme.DarkMode
 import com.kai.bill.feature.common.SectionTitle
-import java.io.File
-import kotlin.math.roundToInt
 
 /** 卡片透明度下限：再低会看不清卡片内容 */
 private const val MIN_CARD_ALPHA = 0.3f
@@ -61,6 +60,7 @@ private const val MAX_BACKGROUND_DIM = 0.8f
  * @param onBackgroundSelected 选择背景图（null 表示清除）
  * @param onCardAlphaChanged 卡片透明度变更（松手时提交）
  * @param onBackgroundDimChanged 背景遮罩深浅变更（松手时提交）
+ * @param onBackgroundTransformChanged 背景图缩放 / 位置变更（取景面板点「保存」时提交）
  * @param modifier 外部修饰符
  */
 @Composable
@@ -71,6 +71,7 @@ fun AppearanceScreen(
     onBackgroundSelected: (Uri?) -> Unit = {},
     onCardAlphaChanged: (Float) -> Unit = {},
     onBackgroundDimChanged: (Float) -> Unit = {},
+    onBackgroundTransformChanged: (Float, Float, Float) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     // 系统图片选择器（Photo Picker）：无需申请存储权限
@@ -80,6 +81,9 @@ fun AppearanceScreen(
         // 用户取消时 uri 为 null，不能误当作「清除背景」
         if (uri != null) onBackgroundSelected(uri)
     }
+
+    // 取景面板显隐；只在有背景图时能打开
+    var adjusting by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -116,12 +120,16 @@ fun AppearanceScreen(
         item(key = "background_picker") {
             BackgroundControl(
                 path = uiState.config.backgroundUri,
+                scale = uiState.config.backgroundScale,
+                offsetX = uiState.config.backgroundOffsetX,
+                offsetY = uiState.config.backgroundOffsetY,
                 onPick = {
                     pickImage.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     )
                 },
-                onClear = { onBackgroundSelected(null) }
+                onClear = { onBackgroundSelected(null) },
+                onAdjust = { adjusting = true }
             )
         }
         // 遮罩深浅只在设置了背景图时才有意义
@@ -146,16 +154,47 @@ fun AppearanceScreen(
             )
         }
     }
+
+    // 取景面板：全屏 Dialog，拖动 / 缩放都只改本地草稿，点「保存」才写回配置
+    val backgroundPath = uiState.config.backgroundUri
+    if (adjusting && backgroundPath != null) {
+        BackgroundAdjustOverlay(
+            imagePath = backgroundPath,
+            initialScale = uiState.config.backgroundScale,
+            initialOffsetX = uiState.config.backgroundOffsetX,
+            initialOffsetY = uiState.config.backgroundOffsetY,
+            onSave = { scale, offsetX, offsetY ->
+                onBackgroundTransformChanged(scale, offsetX, offsetY)
+                adjusting = false
+            },
+            onDismiss = { adjusting = false }
+        )
+    }
 }
 
 /**
- * 背景图片控制：当前图预览 + 选择 / 移除。
+ * 背景图片控制：当前图预览（含已保存的取景）+ 选择 / 调整 / 移除。
+ *
+ * 缩略图用 [BackgroundImage] 而不是裸 `AsyncImage`：取景参数是**比例**语义，
+ * 这里也能如实渲染出「放大了多少、偏向哪边」，用户点「调整」之前就看得到当前效果。
+ *
+ * @param path 背景图路径；null 表示当前是默认纯色背景
+ * @param scale 已保存的缩放倍数
+ * @param offsetX 已保存的水平位置，-1~1
+ * @param offsetY 已保存的垂直位置，-1~1
+ * @param onPick 选择 / 更换照片
+ * @param onClear 移除背景
+ * @param onAdjust 打开取景面板
  */
 @Composable
 private fun BackgroundControl(
     path: String?,
+    scale: Float,
+    offsetX: Float,
+    offsetY: Float,
     onPick: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onAdjust: () -> Unit
 ) {
     ListCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -163,10 +202,12 @@ private fun BackgroundControl(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (path != null) {
-                AsyncImage(
-                    model = File(path),
-                    contentDescription = "当前背景图",
-                    contentScale = ContentScale.Crop,
+                BackgroundImage(
+                    imagePath = path,
+                    dim = 0f,
+                    scale = scale,
+                    offsetX = offsetX,
+                    offsetY = offsetY,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(140.dp)
@@ -204,6 +245,15 @@ private fun BackgroundControl(
                     )
                 }
             }
+            if (path != null) {
+                // 取景单独占一行：和「更换 / 移除」挤一行会被压成三条窄按钮
+                SettingsActionButton(
+                    text = "调整大小与位置",
+                    primary = false,
+                    onClick = onAdjust,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
@@ -239,7 +289,7 @@ private fun SettingSlider(
                     color = AppTheme.color.onSurface
                 )
                 Text(
-                    text = "${(draft * 100).roundToInt()}%",
+                    text = PercentFormatter.of(draft),
                     style = AppTheme.typography.titleMedium,
                     color = AppTheme.color.primary
                 )
@@ -259,8 +309,14 @@ private fun SettingSlider(
     }
 }
 
+/**
+ * 页面通用操作按钮。
+ *
+ * 对包内可见（而非 `private`）：取景面板 [BackgroundAdjustOverlay] 在独立文件里，
+ * 也用它保持两处按钮样式一致。
+ */
 @Composable
-private fun SettingsActionButton(
+internal fun SettingsActionButton(
     text: String,
     primary: Boolean,
     onClick: () -> Unit,
@@ -304,6 +360,7 @@ fun AppearanceRoute(
         onBackgroundSelected = viewModel::onBackgroundSelected,
         onCardAlphaChanged = viewModel::onCardAlphaChanged,
         onBackgroundDimChanged = viewModel::onBackgroundDimChanged,
+        onBackgroundTransformChanged = viewModel::onBackgroundTransformChanged,
         modifier = modifier
     )
 }

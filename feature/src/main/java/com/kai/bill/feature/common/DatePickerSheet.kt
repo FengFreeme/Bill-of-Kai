@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -131,34 +132,42 @@ private fun DayBody(
             onPrev = { view.value = view.value.minusMonths(1) },
             onNext = { view.value = view.value.plusMonths(1) }
         )
-        Row(modifier = Modifier.fillMaxWidth()) {
-            listOf("一", "二", "三", "四", "五", "六", "日").forEach {
-                Text(
-                    text = it,
-                    style = AppTheme.typography.labelSmall,
-                    color = AppTheme.color.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
         val cells = buildList {
             repeat(leading) { add(null) }
             for (d in 1..days) add(firstOfMonth.withDayOfMonth(d))
         }
-        cells.chunked(7).forEach { week ->
+        // 末尾一周可能不足 7 天，补 null 凑满：Row 里每个格子都是 weight(1f)，
+        // 残缺行只剩 3 个格子时它们会均分整行宽度（28/29/30 被摊到 1/6、1/2、5/6 处），
+        // 与上方星期表头对不上，看起来像「没左对齐」。
+        val rows = cells.chunked(7).map { week -> week + List(7 - week.size) { null } }
+        // 表头与日期行放进同一列，统一留 6dp：格子是 40dp 见方，行贴行会连成一片
+        // （列方向本来就有 1/7 屏宽 − 40dp 的间隙，纵向却是 0），上下留缝才和左右对称。
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
-                week.forEach { date ->
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        if (date != null) {
-                            val isSel = date == selected
-                            val isToday = date == now
-                            PickerCell(
-                                text = date.dayOfMonth.toString(),
-                                selected = isSel,
-                                withDot = isToday && !isSel,
-                                onClick = { onSelect(date.toAnchorMillis(zone)) }
-                            )
+                listOf("一", "二", "三", "四", "五", "六", "日").forEach {
+                    Text(
+                        text = it,
+                        style = AppTheme.typography.labelSmall,
+                        color = AppTheme.color.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            rows.forEach { week ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    week.forEach { date ->
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            if (date != null) {
+                                val isSel = date == selected
+                                val isToday = date == now
+                                PickerCell(
+                                    text = date.dayOfMonth.toString(),
+                                    selected = isSel,
+                                    withDot = isToday && !isSel,
+                                    onClick = { onSelect(date.toAnchorMillis(zone)) }
+                                )
+                            }
                         }
                     }
                 }
@@ -331,8 +340,14 @@ private fun MonthHeader(
     }
 }
 
+/** 单元格最小边长：让 1 位 / 2 位数字、日 / 月 / 年 的底色尺寸一致，不随文字宽度涨缩 */
+private val PickerCellMinSize = 40.dp
+
 /**
  * 统一的可点选单元格：选中时满色底 + 主色文字，未选中时浅底。
+ *
+ * 底色用 [defaultMinSize] 兜底：此前没有最小尺寸，底色只按文字宽度铺，
+ * 1 位数的「3」窄成一条竖线、2 位数又更宽，同一列宽窄不一。
  *
  * @param withDot 未选中但需标记（如「今天」）时，在文字下方画一个小圆点
  */
@@ -345,13 +360,18 @@ private fun PickerCell(
 ) {
     Box(
         modifier = Modifier
+            .defaultMinSize(minWidth = PickerCellMinSize, minHeight = PickerCellMinSize)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) AppTheme.color.primary else AppTheme.color.surfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // 内边距给在文字一侧：底色 = 文字 + 内边距，并受最小尺寸兜底。
+        // 竖直方向压到 6dp，保证带「今天」圆点的格子高度也落在最小边长内，行高才整齐。
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = text,
                 style = AppTheme.typography.bodyMedium,

@@ -59,6 +59,7 @@ import com.kai.bill.core.design.theme.AppPalette
 import com.kai.bill.core.design.theme.AppTheme
 import com.kai.bill.core.design.theme.BillOfKaiTheme
 import com.kai.bill.core.design.theme.DarkMode
+import com.kai.bill.domain.calculator.AmountExpression
 import com.kai.bill.domain.model.BillType
 import com.kai.bill.feature.R
 import com.kai.bill.feature.record.components.AccountSelector
@@ -93,7 +94,7 @@ private const val SUB_GRID_REVEAL_DELAY_MILLIS = 320L
  * @param onDelete 数字键盘删除
  * @param onCategorySelect 分类选择（二级或无子分类的一级）
  * @param onParentClick 点击一级：选中并切换展开/收起
- * @param onManageCategory 从分类面板跳分类管理（补一个子分类）
+ * @param onManageCategory 从分类面板跳分类管理补子分类；入参是「＋」所在的一级分类 id
  * @param onAccountSelect 账户选择
  * @param onNoteChange 备注变更
  * @param onDateTimeSelect 选择交易日期时间（精确到分）
@@ -113,7 +114,7 @@ fun RecordScreen(
     onDelete: () -> Unit,
     onCategorySelect: (Long) -> Unit,
     onParentClick: (Long) -> Unit,
-    onManageCategory: () -> Unit,
+    onManageCategory: (Long) -> Unit,
     onAccountSelect: (Long) -> Unit,
     onNoteChange: (String) -> Unit,
     onCountInStatsChange: (Boolean) -> Unit = {},
@@ -131,7 +132,9 @@ fun RecordScreen(
     var keypadVisible by remember { mutableStateOf(false) }
     // 首帧只画顶栏+金额，分类网格/账户选择等数据到位后再挂，避免进入页时与滑动抢同一帧
     var heavyReady by remember { mutableStateOf(false) }
-    val typeTabs = remember { listOf(BillType.EXPENSE, BillType.INCOME) }
+    // 转账是第三种类型：模型 / 预置分类（19 转账、20 还款）/ 统计排除口径都已支持，
+    // 之前只是没在类型切换器里放出来，等于用户根本记不了转账
+    val typeTabs = remember { listOf(BillType.EXPENSE, BillType.INCOME, BillType.TRANSFER) }
 
     val zone = remember { ZoneId.systemDefault() }
     // 交易日期时间（年月日 + 时分），随选择的交易时间变化
@@ -218,7 +221,13 @@ fun RecordScreen(
                     items = typeTabs,
                     selected = uiState.type,
                     onSelect = onTypeChange,
-                    labelOf = { if (it == BillType.EXPENSE) "支出" else "收入" }
+                    labelOf = {
+                        when (it) {
+                            BillType.EXPENSE -> "支出"
+                            BillType.INCOME -> "收入"
+                            BillType.TRANSFER -> "转账"
+                        }
+                    }
                 )
             }
             item(key = "amount") {
@@ -254,11 +263,19 @@ fun RecordScreen(
                                 .padding(horizontal = 16.dp, vertical = 10.dp)
                         )
                     }
+                    // 有算式时把原始算式顶到「本次金额」那行：金额区显示的是求和结果，
+                    // 不摆出算式用户会以为输入被吞了。占用同一行也避免多一行导致布局跳动。
+                    val amountExpression = uiState.amountText
+                        .takeIf { AmountExpression.hasOperator(it) }
                     Text(
-                        text = "本次金额",
+                        text = amountExpression ?: "本次金额",
                         textAlign = TextAlign.Center,
                         style = AppTheme.typography.bodySmall,
-                        color = AppTheme.color.onSurfaceVariant
+                        color = if (amountExpression != null) {
+                            AppTheme.color.primary
+                        } else {
+                            AppTheme.color.onSurfaceVariant
+                        }
                     )
                     // 交易日期时间：日期与时分分别可点，点击或点键盘日历键都能修改
                     Row(
@@ -356,36 +373,40 @@ fun RecordScreen(
                     }
                 }
             }
-            item(key = "count_in_stats") {
-                GroupCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(
+            // 转账不计入统计（见 Bill.isCounted），这个开关对它没有作用：
+            // 显示出来只会让人以为拨动有效，因此干脆不显示。
+            if (uiState.type != BillType.TRANSFER) {
+                item(key = "count_in_stats") {
+                    GroupCard {
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = "计入统计与预算",
-                                style = AppTheme.typography.bodyLarge,
-                                color = AppTheme.color.onSurface
-                            )
-                            Text(
-                                text = "关闭后这笔不计入本月支出、预算与图表",
-                                style = AppTheme.typography.bodySmall,
-                                color = AppTheme.color.onSurfaceVariant
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "计入统计与预算",
+                                    style = AppTheme.typography.bodyLarge,
+                                    color = AppTheme.color.onSurface
+                                )
+                                Text(
+                                    text = "关闭后这笔不计入本月支出、预算与图表",
+                                    style = AppTheme.typography.bodySmall,
+                                    color = AppTheme.color.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = uiState.countInStats,
+                                onCheckedChange = onCountInStatsChange
                             )
                         }
-                        Switch(
-                            checked = uiState.countInStats,
-                            onCheckedChange = onCountInStatsChange
-                        )
                     }
                 }
             }
@@ -620,14 +641,14 @@ private fun HintText(text: String) {
  *
  * @param billId 编辑目标账单 ID；0 表示新增
  * @param onClose 保存/删除成功后关闭页面
- * @param onManageCategory 跳分类管理（补一个子分类）
+ * @param onManageCategory 跳分类管理补子分类；入参是「＋」所在的一级分类 id
  * @param modifier 外部修饰符
  * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun RecordRoute(
     onClose: () -> Unit,
-    onManageCategory: () -> Unit,
+    onManageCategory: (Long) -> Unit,
     modifier: Modifier = Modifier,
     billId: Long = 0L,
     viewModel: RecordViewModel = hiltViewModel()

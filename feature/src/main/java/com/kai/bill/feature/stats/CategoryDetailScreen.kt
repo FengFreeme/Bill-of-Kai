@@ -155,9 +155,12 @@ fun CategoryDetailScreen(
             } else if (uiState.composition.isNotEmpty()) {
                 item(key = "composition") {
                     ListCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        // 垂直留 16dp；水平交给标题（16dp）与图表（4dp）各自控制，
+                        // 这样图表标签能更贴近卡片边缘
+                        Column(modifier = Modifier.padding(vertical = 16.dp)) {
                             Text(
                                 text = if (uiState.selectedChildId == null) "子分类构成" else "构成",
+                                modifier = Modifier.padding(horizontal = 16.dp),
                                 style = AppTheme.typography.titleSmall,
                                 color = AppTheme.color.onSurface,
                                 fontWeight = FontWeight.Medium
@@ -193,6 +196,7 @@ fun CategoryDetailScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(300.dp)
+                                    .padding(horizontal = 4.dp)
                             )
                         }
                     }

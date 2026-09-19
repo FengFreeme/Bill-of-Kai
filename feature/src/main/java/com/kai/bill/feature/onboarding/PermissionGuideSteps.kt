@@ -9,6 +9,9 @@ enum class GuideAction {
     /** 跳转到系统「通知使用权」设置页 */
     LISTENER_SETTINGS,
 
+    /** 跳转到系统「无障碍」设置页（分类识别 / 自动补记账） */
+    ACCESSIBILITY_SETTINGS,
+
     /** 申请加入电池优化白名单（AOSP 标准页，所有机型通用） */
     BATTERY_OPTIMIZATION,
 
@@ -52,6 +55,18 @@ object PermissionGuideSteps {
                 description = "允许本 App 读取通知栏内容，才能从支付宝 / 微信扣款通知自动记账。",
                 action = GuideAction.LISTENER_SETTINGS,
                 essential = true
+            )
+        )
+        // 排在「通知使用权」之后：它不影响能不能自动记账，只影响分类有多准，
+        // 因此 essential = false —— 不开启时主链路照常工作，只是分类容易落到「其他」。
+        add(
+            GuideStep(
+                id = "accessibility",
+                title = "开启分类识别（无障碍）",
+                description = "读取支付页面上的商户信息，把落进「其他」的账单自动改成餐饮 / 交通等分类；" +
+                    "通知没来、但页面上有这笔消费时，也会自动补记一笔。",
+                action = GuideAction.ACCESSIBILITY_SETTINGS,
+                essential = false
             )
         )
         add(

@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.kai.bill.core.common.money.MoneyFormatter
+import com.kai.bill.core.common.percent.PercentFormatter
 import com.kai.bill.core.design.theme.AppTheme
 import com.kai.bill.domain.model.stats.CategoryStat
 
@@ -109,7 +110,7 @@ private fun CategoryRankItem(stat: CategoryStat, accent: Color, onClick: () -> U
         }
 
         Text(
-            text = "${(ratio * 100).toInt()}% · ${stat.billCount} 笔",
+            text = "${PercentFormatter.of(ratio)} · ${stat.billCount} 笔",
             style = AppTheme.typography.labelSmall,
             color = AppTheme.color.onSurfaceVariant
         )

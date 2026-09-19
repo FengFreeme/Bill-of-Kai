@@ -21,12 +21,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +77,7 @@ private const val SUB_CATEGORY_ANIM_MILLIS = 260
  * @param onDismissEdit 关闭对话框
  * @param onClearError 清除错误提示
  * @param onBack 返回
+ * @param focusParentId 进入时要定位的一级分类 ID；0 表示不定位（普通进入）
  * @param modifier 外部修饰符
  */
 @Composable
@@ -90,9 +93,23 @@ fun CategoryManageScreen(
     onDismissEdit: () -> Unit,
     onClearError: () -> Unit,
     onBack: () -> Unit,
+    focusParentId: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     val typeTabs = remember { listOf(BillType.EXPENSE, BillType.INCOME) }
+
+    val listState = rememberLazyListState()
+    // 带着某个大类进来时（记一笔二级网格的「＋」）把它滚到可见位置：
+    // 列表一长，光展开用户也找不到。等分类树到位、算出下标后再滚，且只滚一次。
+    var focusScrolled by remember { mutableStateOf(false) }
+    LaunchedEffect(focusParentId, uiState.tree) {
+        if (focusScrolled || focusParentId <= 0L) return@LaunchedEffect
+        val index = uiState.tree.indexOfFirst { it.parent.id == focusParentId }
+        if (index >= 0) {
+            focusScrolled = true
+            listState.animateScrollToItem(index)
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -129,6 +146,7 @@ fun CategoryManageScreen(
         )
 
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
@@ -389,18 +407,25 @@ private fun CategoryEditDialog(
  * 分类管理的路由，负责接上 ViewModel。
  *
  * @param onBack 返回上一页
+ * @param focusParentId 进入时要定位的一级分类 ID；0 表示不定位
  * @param modifier 外部修饰符
  * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun CategoryManageRoute(
     onBack: () -> Unit,
+    focusParentId: Long = 0L,
     modifier: Modifier = Modifier,
     viewModel: CategoryManageViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // 带大类进来时（记一笔二级网格的「＋」），展开它并直接弹「在它下面新增」
+    LaunchedEffect(focusParentId) {
+        if (focusParentId > 0L) viewModel.focusOn(focusParentId)
+    }
     CategoryManageScreen(
         uiState = uiState,
+        focusParentId = focusParentId,
         onTypeChange = viewModel::onTypeChange,
         onToggleExpand = viewModel::toggleExpand,
         onRequestAddParent = viewModel::onRequestAddParent,

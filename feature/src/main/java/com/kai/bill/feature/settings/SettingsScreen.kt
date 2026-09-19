@@ -1,5 +1,6 @@
 package com.kai.bill.feature.settings
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -44,6 +47,7 @@ fun SettingsScreen(
     onBudgetClick: () -> Unit = {},
     onReviewClick: () -> Unit = {},
     onOnboardingClick: () -> Unit = {},
+    onBackupClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -86,7 +90,23 @@ fun SettingsScreen(
                 onClick = onAccountClick
             )
         }
-        // 「解析规则」「待审核记录」两项功能暂未实现，先隐藏入口（保留参数与 glyph 便于后续恢复）
+        item(key = "backup") {
+            SettingsRow(
+                title = "数据备份",
+                subtitle = "导出 / 导入账单，换机迁移",
+                leading = { BackupGlyph(it) },
+                onClick = onBackupClick
+            )
+        }
+        item(key = "review") {
+            SettingsRow(
+                title = "待审核记录",
+                subtitle = "判不准的通知，确认后才成为账单",
+                leading = { ClipboardGlyph(it) },
+                onClick = onReviewClick
+            )
+        }
+        // 「解析规则」仍待 P1 落地（词表入库后才能编辑），先隐藏入口
         item(key = "onboarding") {
             SettingsRow(
                 title = "权限与采集引导",
@@ -209,6 +229,25 @@ private fun CardGlyph(color: Color) {
                 .size(width = 18.dp, height = 3.dp)
                 .background(Color.White.copy(alpha = 0.35f))
         )
+    }
+}
+
+@Composable
+private fun BackupGlyph(color: Color) {
+    Canvas(modifier = Modifier.size(18.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = 1.8.dp.toPx()
+        // 左：向下箭头（导出）
+        val leftX = w * 0.32f
+        drawLine(color, Offset(leftX, h * 0.16f), Offset(leftX, h * 0.78f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(leftX - w * 0.15f, h * 0.6f), Offset(leftX, h * 0.8f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(leftX + w * 0.15f, h * 0.6f), Offset(leftX, h * 0.8f), stroke, StrokeCap.Round)
+        // 右：向上箭头（导入）
+        val rightX = w * 0.68f
+        drawLine(color, Offset(rightX, h * 0.84f), Offset(rightX, h * 0.22f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(rightX - w * 0.15f, h * 0.4f), Offset(rightX, h * 0.2f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(rightX + w * 0.15f, h * 0.4f), Offset(rightX, h * 0.2f), stroke, StrokeCap.Round)
     }
 }
 

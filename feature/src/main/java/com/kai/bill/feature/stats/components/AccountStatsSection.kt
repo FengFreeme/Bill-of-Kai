@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.kai.bill.core.common.money.MoneyFormatter
+import com.kai.bill.core.common.percent.PercentFormatter
 import com.kai.bill.core.design.component.GlassCard
 import com.kai.bill.core.design.theme.AppTheme
 import com.kai.bill.domain.model.stats.AccountStat
@@ -60,7 +61,7 @@ fun AccountStatsSection(
                             color = AppTheme.color.onSurface
                         )
                         Text(
-                            text = "${(stat.ratio.coerceIn(0f, 1f) * 100).toInt()}%",
+                            text = PercentFormatter.of(stat.ratio),
                             style = AppTheme.typography.labelSmall,
                             color = AppTheme.color.onSurfaceVariant
                         )

@@ -49,6 +49,8 @@ import com.kai.bill.feature.home.components.OverviewCard
  * @param uiState 首页状态
  * @param onRecordClick 进入记一笔二级页
  * @param onBillClick 点击账单进入编辑
+ * @param pendingCount 待确认账单条数；**为 0 时不渲染卡片**（没有待办就不要占位置）
+ * @param onReviewClick 进入待审核记录页
  * @param modifier 外部修饰符
  */
 @Composable
@@ -59,6 +61,8 @@ fun HomeScreen(
     onBudgetClick: () -> Unit = {},
     listenerWarning: Boolean = false,
     onListenerWarningAction: () -> Unit = {},
+    pendingCount: Int = 0,
+    onReviewClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val budgetProgress = uiState.budgetProgress
@@ -80,6 +84,13 @@ fun HomeScreen(
         if (listenerWarning) {
             item(key = "listener_warning") {
                 ListenerWarningBanner(onClick = onListenerWarningAction)
+            }
+        }
+
+        // 待确认与断连预警同属「需要你处理一下」的信息，所以并排放在最上面
+        if (pendingCount > 0) {
+            item(key = "pending_review") {
+                PendingReviewCard(count = pendingCount, onClick = onReviewClick)
             }
         }
 
@@ -218,6 +229,40 @@ private fun ListenerWarningBanner(onClick: () -> Unit) {
     }
 }
 
+/**
+ * 待确认账单入口卡片：只在有待确认时出现，点击进待审核记录页。
+ *
+ * 与 [ListenerWarningBanner] 同样用 [ListCard] 包裹，避免有背景图时卡片直接裸在照片上。
+ */
+@Composable
+private fun PendingReviewCard(count: Int, onClick: () -> Unit) {
+    ListCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(text = "🧾", style = AppTheme.typography.titleMedium)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "有 $count 笔待确认",
+                    style = AppTheme.typography.titleMedium,
+                    color = AppTheme.color.onSurface
+                )
+                Text(
+                    text = "判不准的通知确认后才记账，点此去处理。",
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.color.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun rememberCategoryMap(categories: List<com.kai.bill.domain.model.Category>): Map<Long, com.kai.bill.domain.model.Category> {
     return androidx.compose.runtime.remember(categories) {
@@ -237,6 +282,7 @@ private fun rememberAccountMap(accounts: List<com.kai.bill.domain.model.Account>
  *
  * @param onRecordClick 进入记一笔二级页（由 NavHost 注入）
  * @param onBillClick 点击账单进入编辑
+ * @param onReviewClick 进入待审核记录页
  * @param modifier 外部修饰符
  * @param viewModel 由 Hilt 注入
  */
@@ -245,11 +291,13 @@ fun HomeRoute(
     onRecordClick: () -> Unit,
     onBillClick: (Long) -> Unit = {},
     onBudgetClick: () -> Unit = {},
+    onReviewClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val listenerWarning by viewModel.captureWarning.collectAsStateWithLifecycle()
+    val pendingCount by viewModel.pendingCount.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     HomeScreen(
         uiState = uiState,
@@ -258,6 +306,8 @@ fun HomeRoute(
         onBudgetClick = onBudgetClick,
         listenerWarning = listenerWarning,
         onListenerWarningAction = { context.openNotificationListenerSettings() },
+        pendingCount = pendingCount,
+        onReviewClick = onReviewClick,
         modifier = modifier
     )
 }

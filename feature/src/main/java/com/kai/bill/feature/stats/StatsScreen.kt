@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kai.bill.core.common.money.MoneyFormatter
+import com.kai.bill.core.common.percent.PercentFormatter
 import com.kai.bill.core.design.component.EmptyState
 import com.kai.bill.core.design.component.GroupCard
 import com.kai.bill.core.design.component.SegmentTabs
@@ -79,7 +80,7 @@ import kotlin.math.roundToInt
  * @param showFilterPanel 是否展开筛选面板
  * @param onRangeKindSelected 时间粒度切换回调
  * @param onDateAnchorSelected 在日 / 周 / 月 / 年弹层里选定具体日期回调（毫秒）
- * @param onStatTypeSelected 统计维度（支出 / 收入）切换回调
+ * @param onStatTypeSelected 统计维度（支出 / 收入 / 转账）切换回调
  * @param onCategoryStatsModeSelected 分类统计维度（主分类 / 子分类）切换回调
  * @param onCategoryClick 点击分类排行项：进入该分类的详情页
  * @param modifier 外部修饰符
@@ -102,6 +103,10 @@ fun StatsScreen(
     onDraftCategoryToggled: (Long) -> Unit,
     onDraftAccountToggled: (Long) -> Unit,
     onDraftUnspecifiedAccountToggled: () -> Unit,
+    onDraftAllCategoriesSelected: () -> Unit,
+    onDraftAllAccountsSelected: () -> Unit,
+    onDraftAllCategoriesCleared: () -> Unit,
+    onDraftAllAccountsCleared: () -> Unit,
     onDraftReset: () -> Unit,
     onApplyFilter: () -> Unit,
     onClearFilter: () -> Unit,
@@ -154,6 +159,7 @@ fun StatsScreen(
                         }
                     }
                     // 当前区间的可点选标签：点开后弹日 / 周 / 月 / 年取值面板
+                    // 宽度贴合文字即可 —— 撑满整行会让短标签后面空出一大片
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
@@ -188,15 +194,25 @@ fun StatsScreen(
 
             item(key = "type_tabs") {
                 SegmentTabs(
-                    items = listOf(BillType.EXPENSE, BillType.INCOME),
+                    items = listOf(BillType.EXPENSE, BillType.INCOME, BillType.TRANSFER),
                     selected = uiState.statType,
                     onSelect = onStatTypeSelected,
-                    labelOf = { if (it == BillType.EXPENSE) "支出" else "收入" }
+                    labelOf = {
+                        when (it) {
+                            BillType.EXPENSE -> "支出"
+                            BillType.INCOME -> "收入"
+                            BillType.TRANSFER -> "转账"
+                        }
+                    }
                 )
             }
 
-            item(key = "overview") {
-                StatsOverviewPanel(overview = uiState.overview)
+            // 概览面板是「支出 / 收入」口径（转账本就不计入收支），转账维度下没有意义，
+            // 转账总额由下面分类构成圈的圆心承担。
+            if (uiState.statType != BillType.TRANSFER) {
+                item(key = "overview") {
+                    StatsOverviewPanel(overview = uiState.overview)
+                }
             }
 
             item(key = "category_header") {
@@ -231,20 +247,22 @@ fun StatsScreen(
                     val baseTotalCents = when (uiState.statType) {
                         BillType.EXPENSE -> uiState.overview.expenseCents
                         BillType.INCOME -> uiState.overview.incomeCents
-                        BillType.TRANSFER -> 0L
+                        // 转账不进概览（overview 只有收支两项），圆心总额取分类构成之和
+                        BillType.TRANSFER -> uiState.categoryStats.sumOf { it.amountCents }
                     }
                     val centerTitle: String
                     val centerCaption: String
                     if (selectedIndex in uiState.categoryStats.indices) {
                         val stat = uiState.categoryStats[selectedIndex]
                         centerTitle = MoneyFormatter.plain(stat.amountCents)
-                        centerCaption = "${stat.categoryName} ${(stat.ratio * 100).roundToInt()}%"
+                        centerCaption = "${stat.categoryName} ${PercentFormatter.of(stat.ratio)}"
                     } else {
                         centerTitle = MoneyFormatter.plain(baseTotalCents)
                         centerCaption = baseCaption
                     }
                     GroupCard {
-                        Box(modifier = Modifier.padding(12.dp)) {
+                        // 水平只留 4dp：标签文字本身还有 labelPad 内边距，加起来才不至于离卡片边太远
+                        Box(modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) {
                             DonutChart(
                                 slices = slices,
                                 centerTitle = centerTitle,
@@ -287,7 +305,13 @@ fun StatsScreen(
             }
 
             item(key = "trend_title") {
-                SectionTitle(text = if (uiState.statType == BillType.EXPENSE) "支出趋势" else "收入趋势")
+                SectionTitle(
+                    text = when (uiState.statType) {
+                        BillType.EXPENSE -> "支出趋势"
+                        BillType.INCOME -> "收入趋势"
+                        BillType.TRANSFER -> "转账趋势"
+                    }
+                )
             }
             item(key = "trend_chart") {
                 if (uiState.trendPoints.isEmpty()) {
@@ -312,7 +336,13 @@ fun StatsScreen(
 
             if (uiState.rangeKind != DateRangeKind.YEAR) {
                 item(key = "week_bar_title") {
-                    SectionTitle(text = if (uiState.statType == BillType.EXPENSE) "周支出对比" else "周收入对比")
+                    SectionTitle(
+                        text = when (uiState.statType) {
+                            BillType.EXPENSE -> "周支出对比"
+                            BillType.INCOME -> "周收入对比"
+                            BillType.TRANSFER -> "周转账对比"
+                        }
+                    )
                 }
                 item(key = "week_bar_chart") {
                     if (uiState.weeklyBars.isEmpty()) {
@@ -364,6 +394,10 @@ fun StatsScreen(
                     onCategoryToggled = onDraftCategoryToggled,
                     onAccountToggled = onDraftAccountToggled,
                     onUnspecifiedAccountToggled = onDraftUnspecifiedAccountToggled,
+                    onSelectAllCategories = onDraftAllCategoriesSelected,
+                    onSelectAllAccounts = onDraftAllAccountsSelected,
+                    onClearAllCategories = onDraftAllCategoriesCleared,
+                    onClearAllAccounts = onDraftAllAccountsCleared,
                     onReset = onDraftReset,
                     onApply = onApplyFilter,
                     onDismiss = onDismissFilterPanel,
@@ -524,6 +558,10 @@ fun StatsRoute(
         onDraftCategoryToggled = viewModel::onDraftCategoryToggled,
         onDraftAccountToggled = viewModel::onDraftAccountToggled,
         onDraftUnspecifiedAccountToggled = viewModel::onDraftUnspecifiedAccountToggled,
+        onDraftAllCategoriesSelected = viewModel::onDraftAllCategoriesSelected,
+        onDraftAllAccountsSelected = viewModel::onDraftAllAccountsSelected,
+        onDraftAllCategoriesCleared = viewModel::onDraftAllCategoriesCleared,
+        onDraftAllAccountsCleared = viewModel::onDraftAllAccountsCleared,
         onDraftReset = viewModel::onDraftReset,
         onApplyFilter = viewModel::applyFilterDraft,
         onClearFilter = viewModel::onFilterCleared,
@@ -552,6 +590,10 @@ private fun StatsScreenLightPreview() {
             onDraftCategoryToggled = {},
             onDraftAccountToggled = {},
             onDraftUnspecifiedAccountToggled = {},
+            onDraftAllCategoriesSelected = {},
+            onDraftAllAccountsSelected = {},
+            onDraftAllCategoriesCleared = {},
+            onDraftAllAccountsCleared = {},
             onDraftReset = {},
             onApplyFilter = {},
             onClearFilter = {}
