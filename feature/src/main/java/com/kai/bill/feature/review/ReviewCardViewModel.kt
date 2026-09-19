@@ -2,7 +2,6 @@ package com.kai.bill.feature.review
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kai.bill.core.common.overlay.ReviewKind
 import com.kai.bill.domain.model.Bill
 import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.CategoryNode
@@ -26,17 +25,13 @@ import kotlinx.coroutines.launch
  * 用**一次性读取**而非观察流：卡片是短命的（弹出来几秒、用户点一下就走），
  * 展示的就是「刚刚记下的那一笔」，不存在被别的入口改动的窗口期。
  * 少一层 Flow 生命周期管理，行为也更可预测。
- *
- * 分类的选择与落库都在这里完成 —— 卡片**不跳转编辑页**：
- * 从悬浮层 `startActivity` 打开 App 属于后台启动 Activity，系统会静默拦截，
- * 用户看到的就是「点了没反应」（真机复现过）。
  */
 @HiltViewModel
 class ReviewCardViewModel @Inject constructor(
     private val billRepository: BillRepository,
     private val categoryRepository: CategoryRepository,
-    private val updateBillUseCase: UpdateBillUseCase,
-    private val deleteBillUseCase: DeleteBillUseCase
+    private val deleteBillUseCase: DeleteBillUseCase,
+    private val updateBillUseCase: UpdateBillUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ReviewCardUiState())
@@ -50,7 +45,7 @@ class ReviewCardViewModel @Inject constructor(
      * 重复传入同一个 id 直接忽略：卡片是 `singleTop`，第二次拉起会走 `onNewIntent`
      * 再触发一次载入，不去重就会白查一遍库。
      */
-    fun load(billId: Long, kind: ReviewKind) {
+    fun load(billId: Long) {
         if (billId <= 0L || billId == loadedBillId) return
         loadedBillId = billId
 
@@ -61,14 +56,16 @@ class ReviewCardViewModel @Inject constructor(
                 _state.update { it.copy(closed = true) }
                 return@launch
             }
+            val categoryName = categoryRepository.getById(bill.categoryId)?.name ?: "未分类"
+            // 分类树按账单类型取：支出 / 收入 / 转账各一套，卡片内的选择器要展示对应的那套
+            val tree = runCatching {
+                categoryRepository.observeByType(bill.type).first().toCategoryTree()
+            }.getOrDefault(emptyList())
             _state.update {
                 it.copy(
                     bill = bill,
-                    kind = kind,
-                    categoryName = categoryNameOf(bill.categoryId),
-                    // 只给「同一方向」的分类，并组装成两级树：分类卡直接用应用内的 CategoryPicker 渲染
-                    tree = categoryRepository.observeByType(bill.type).first().toCategoryTree(),
-                    errorMessage = null,
+                    categoryName = categoryName,
+                    categoryTree = tree,
                     closed = false
                 )
             }
@@ -76,16 +73,20 @@ class ReviewCardViewModel @Inject constructor(
     }
 
     /**
-     * 在卡片里改分类：直接落库，全程不离开当前 App。
+     * 在卡片里改分类。
      *
-     * 失败不关闭卡片，而是在卡面上给出原因 —— 默默关掉会让用户以为改成功了。
+     * 只覆盖分类：其余字段全部沿用原账单快照 —— 卡片是「当场修正分类」的入口，
+     * 不该顺手改动用户没碰过的金额 / 账户 / 备注（[UpdateBillUseCase] 正是按这个约定写的）。
+     *
+     * 失败不关卡片、也不提示：卡片是短命的，写失败时保持原样比弹一个转瞬即逝的错
+     * 更容易被理解；真正的一致性由仓储保证。
      */
-    fun pickCategory(categoryId: Long) {
+    fun changeCategory(categoryId: Long) {
         val bill = _state.value.bill ?: return
-        if (categoryId <= 0L || categoryId == bill.categoryId) return
+        if (categoryId == bill.categoryId) return
 
         viewModelScope.launch {
-            val ok = runCatching {
+            val saved = runCatching {
                 updateBillUseCase(
                     UpdateBillUseCase.Params(
                         snapshot = bill,
@@ -94,17 +95,17 @@ class ReviewCardViewModel @Inject constructor(
                         categoryId = categoryId,
                         accountId = bill.accountId,
                         note = bill.note,
-                        countInStats = bill.countInStats,
-                        tradeTimeMillis = bill.tradeTimeMillis
+                        countInStats = bill.countInStats
                     )
                 )
             }.isSuccess
+            if (!saved) return@launch
 
-            _state.update {
-                it.copy(
-                    bill = if (ok) bill.copy(categoryId = categoryId) else bill,
-                    categoryName = if (ok) categoryNameOf(categoryId) else it.categoryName,
-                    errorMessage = if (ok) null else "分类没改成，请到 App 里再试一次"
+            val name = categoryRepository.getById(categoryId)?.name
+            _state.update { state ->
+                state.copy(
+                    bill = state.bill?.copy(categoryId = categoryId),
+                    categoryName = name ?: state.categoryName
                 )
             }
         }
@@ -118,25 +119,18 @@ class ReviewCardViewModel @Inject constructor(
             _state.update { it.copy(closed = true) }
         }
     }
-
-    private suspend fun categoryNameOf(categoryId: Long): String =
-        categoryRepository.getById(categoryId)?.name ?: "未分类"
 }
 
 /**
  * @property bill 待展示的账单；null 表示尚未载入完成
- * @property kind 「新建一笔」还是「补分类」—— 决定标题与说明
  * @property categoryName 已解析好的分类名，UI 不再自己查仓储
- * @property tree 可选的分类（两级结构，已按账单方向过滤）
- * @property errorMessage 上一次操作失败的提示；null 表示正常
+ * @property categoryTree 当前账单类型下的两级分类，供卡片内弹出的选择器使用
  * @property closed true 表示应当关闭卡片（账单不存在或已被撤销）
  */
 data class ReviewCardUiState(
     val bill: Bill? = null,
-    val kind: ReviewKind = ReviewKind.CREATED,
     val categoryName: String = "",
-    val tree: List<CategoryNode> = emptyList(),
-    val errorMessage: String? = null,
+    val categoryTree: List<CategoryNode> = emptyList(),
     val closed: Boolean = false
 )
 

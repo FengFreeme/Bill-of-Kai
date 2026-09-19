@@ -85,6 +85,55 @@ class DirectionRouterTest {
         assertFalse(hit.isPending)
     }
 
+    // —— 个人转账：转入 / 转出（两张真机页面样本）——
+    //
+    // 两个方向的页面文案都带「收款」，方向判错会把「转出」记成一笔收入（虚增收入）。
+    // 下面两条钉住「都要判成转账」，后两条钉住「不许误伤付款页」。
+
+    @Test
+    fun `转账转出页-他人已收款-判转账而非收入`() {
+        // 付款方视角的转账结果页：「周建鑫已收款」= 我把钱转给了周建鑫。
+        // 全页只有「已收款」这三个字可判，按裸的「收款」判会被记成一笔 ¥200 的收入。
+        val hit = route("周建鑫已收款 ¥200.00 转账时间 2026年09月10日 22:22:08 收款时间 2026年09月10日 22:22:44 账单详情")
+        assertEquals(MatchRoute.TRANSFER, hit.route)
+        assertEquals(BillType.TRANSFER, hit.type)
+        assertFalse(hit.countInStats)
+        assertFalse(hit.isPending)
+    }
+
+    @Test
+    fun `转账转入页-你已收款-判转账而非收入`() {
+        val hit = route(
+            "你已收款，资金已存入零钱 ¥100.00 零钱余额 " +
+                "转账时间 2026年09月10日 17:24:47 收款时间 2026年09月10日 17:24:55 账单详情"
+        )
+        assertEquals(MatchRoute.TRANSFER, hit.route)
+        assertFalse(hit.countInStats)
+        // 不钉具体命中词：转账组里有「你已收款」「资金已存入零钱」两条强词，
+        // 同优先级时**更长的胜出**，因此这页命中的是后者 —— 两者结论相同，都不该被写死。
+        assertTrue(hit.matchedKeyword in setOf("你已收款", "资金已存入零钱"))
+    }
+
+    @Test
+    fun `付款成功页的对方已收款-仍判支出`() {
+        // 「对方已收款」也出现在**付款成功**页里，所以它不能进方向词表 ——
+        // 一旦收进来，每一笔付款都会被判成转账。这条用例守住这个边界。
+        val hit = route("微信支付 使用零钱支付 ¥1.00 交易状态 支付成功 收款方 Sparking 对方已收款")
+        assertEquals(MatchRoute.EXPENSE, hit.route)
+    }
+
+    @Test
+    fun `扫码付款的账单详情-仍判支出`() {
+        // 微信「扫码付款」的账单详情里同样有「转账时间 / 转账单号」，
+        // 因此这两个字段**不能**当作「这是转账」的证据，否则真支出会被记成转账。
+        val hit = route(
+            "全部账单 本服务由财付通提供 当前状态 支付成功 收款方备注 二维码收款 支付方式 零钱 " +
+                "转账时间 2026年9月18日 23:09:06 转账单号 10001073012026091800609962660139 " +
+                "账单服务 对订单有疑惑 扫二维码付款-给Sparking -0.10"
+        )
+        assertEquals(MatchRoute.EXPENSE, hit.route)
+    }
+
     // —— 待确认 ——
 
     @Test

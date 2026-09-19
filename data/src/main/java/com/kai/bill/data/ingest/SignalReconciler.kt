@@ -1,6 +1,5 @@
 package com.kai.bill.data.ingest
 
-import com.kai.bill.core.common.overlay.ReviewKind
 import com.kai.bill.data.capture.signal.CategorySignal
 import com.kai.bill.data.capture.signal.CategorySignalOrigin
 import com.kai.bill.data.parser.CategoryRouter
@@ -84,19 +83,8 @@ data class ReconcileResult(
      * 与 `ENRICHED`（分类被改了，需要知道改成了什么）。其余情形弹了也没有可操作的内容。
      */
     val reviewBillId: Long?
-        get() = billId?.takeIf { reviewKind != null }
-
-    /**
-     * 该弹哪种卡片；不需要弹时为 null。
-     *
-     * 「新建」与「补分类」的文案必须区分（见 [ReviewKind]），因此这里把结果直接翻译成种类，
-     * 而不是让上层自己去 `when (outcome)` —— 少一处会漂移的映射。
-     */
-    val reviewKind: ReviewKind?
-        get() = when (outcome) {
-            ReconcileOutcome.CREATED -> ReviewKind.CREATED
-            ReconcileOutcome.ENRICHED -> ReviewKind.ENRICHED
-            else -> null
+        get() = billId?.takeIf {
+            outcome == ReconcileOutcome.CREATED || outcome == ReconcileOutcome.ENRICHED
         }
 }
 

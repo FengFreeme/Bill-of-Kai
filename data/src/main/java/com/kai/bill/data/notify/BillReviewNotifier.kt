@@ -8,7 +8,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.kai.bill.core.common.overlay.ReviewCardOverlay
-import com.kai.bill.core.common.overlay.ReviewKind
+import com.kai.bill.core.common.overlay.ReviewCardReason
 import com.kai.bill.data.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -32,12 +32,12 @@ object ReviewCardContract {
     const val EXTRA_BILL_ID = "com.kai.bill.extra.REVIEW_CARD_BILL_ID"
 
     /**
-     * Intent extra：这张卡片是「新建一笔」还是「补分类」（存 [ReviewKind] 的 name）。
+     * Intent extra：这笔的来由（[ReviewCardReason] 的名字）。
      *
-     * 通知被点击后由 app 侧的 `ReviewCardActivity` 读取，用来决定标题与说明文案 ——
-     * 两条路径（悬浮层 / 点通知）必须说同样的话，所以种类要跟着 Intent 一起传。
+     * 走这条兜底路径时（悬浮层不可用），卡片由 Activity 展示，
+     * 而 Activity 只能从 Intent 里知道「该说新建还是该说补分类」。
      */
-    const val EXTRA_REVIEW_KIND = "com.kai.bill.extra.REVIEW_CARD_KIND"
+    const val EXTRA_REASON = "com.kai.bill.extra.REVIEW_CARD_REASON"
 }
 
 /**
@@ -58,9 +58,10 @@ interface BillReviewNotifier {
      * 送不到绝不能让采集链路中断。
      *
      * @param billId 账单主键，必须 > 0
-     * @param kind 这张卡片是「新建一笔」还是「补分类」—— 文案必须区分，见 [ReviewKind]
+     * @param reason 这笔的来由（新建 / 补分类）。文案必须跟着它变：
+     *       「补分类」时若还说「已自动记一笔」，用户会以为同一笔钱被记了两次
      */
-    suspend fun notifyForReview(billId: Long, kind: ReviewKind)
+    suspend fun notifyForReview(billId: Long, reason: ReviewCardReason)
 }
 
 /**
@@ -88,17 +89,17 @@ class DefaultBillReviewNotifier @Inject constructor(
     /** 已送过的账单 id（有界）；同一笔只打扰一次 */
     private val shown = LinkedHashSet<Long>()
 
-    override suspend fun notifyForReview(billId: Long, kind: ReviewKind) {
+    override suspend fun notifyForReview(billId: Long, reason: ReviewCardReason) {
         if (billId <= 0L) return
         if (!markShown(billId)) return
 
         // 路径一：无障碍悬浮层。只要无障碍服务在跑（信号正是它产出的），这条路一定可用
-        val displayed = runCatching { overlay.show(billId, kind) }.getOrDefault(false)
+        val displayed = runCatching { overlay.show(billId, reason) }.getOrDefault(false)
         if (displayed) return
 
         // 路径二：退化为横幅通知。宁可退一档（用户下拉点一下），
         // 也不能让「多了一笔账」这件事悄无声息
-        runCatching { postHeadsUp(billId, kind) }
+        runCatching { postHeadsUp(billId, reason) }
     }
 
     /** @return true 表示这是第一次送；false 表示已送过，跳过 */
@@ -108,35 +109,46 @@ class DefaultBillReviewNotifier @Inject constructor(
         true
     }
 
-    private fun cardIntent(billId: Long, kind: ReviewKind): Intent =
+    private fun cardIntent(billId: Long, reason: ReviewCardReason): Intent =
         Intent(ReviewCardContract.ACTION_REVIEW_CARD)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(ReviewCardContract.EXTRA_BILL_ID, billId)
-            .putExtra(ReviewCardContract.EXTRA_REVIEW_KIND, kind.name)
+            .putExtra(ReviewCardContract.EXTRA_REASON, reason.name)
 
-    private fun postHeadsUp(billId: Long, kind: ReviewKind) {
+    private fun postHeadsUp(billId: Long, reason: ReviewCardReason) {
         ensureChannel()
+        // 与卡片文案同一套口径：新建说「多了一笔」，补分类说「只改了分类」
+        val title = when (reason) {
+            ReviewCardReason.CREATED -> "已自动记一笔"
+            ReviewCardReason.ENRICHED -> "已补充分类"
+        }
+        val text = when (reason) {
+            ReviewCardReason.CREATED -> "点开可以改分类或撤销"
+            ReviewCardReason.ENRICHED -> "点开可以看看改成了什么"
+        }
+
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(kind.headsUpTitle())
-            .setContentText(kind.headsUpText())
+            .setContentTitle(title)
+            .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             // 会变的 extra 必须配不同的 requestCode，否则第二条通知会点到第一笔账上
-            .setContentIntent(cardPendingIntent(billId, kind))
+            .setContentIntent(cardPendingIntent(billId, reason))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .build()
         manager.notify(notifId(billId), notif)
     }
 
-    private fun cardPendingIntent(billId: Long, kind: ReviewKind): PendingIntent = PendingIntent.getActivity(
-        context,
-        notifId(billId),
-        cardIntent(billId, kind),
-        // FLAG_IMMUTABLE 是 Android 12+ 的硬要求
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
+    private fun cardPendingIntent(billId: Long, reason: ReviewCardReason): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            notifId(billId),
+            cardIntent(billId, reason),
+            // FLAG_IMMUTABLE 是 Android 12+ 的硬要求
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
     /** 通知与 PendingIntent 共用 id：让「通知」与「点击它要打开的卡片」一一对应 */
     private fun notifId(billId: Long): Int = NOTIF_ID_BASE + (billId % NOTIF_ID_SPAN).toInt()
@@ -164,20 +176,4 @@ class DefaultBillReviewNotifier @Inject constructor(
 
         const val MAX_REMEMBERED = 32
     }
-}
-
-/**
- * 通知栏标题。
- *
- * 「凭空补记一笔」和「只是把分类补全了」对用户是两件不同的事：
- * 前者要他核对金额对不对，后者只要知道改成了什么。文案不区分，用户就不知道要不要动手。
- */
-private fun ReviewKind.headsUpTitle(): String = when (this) {
-    ReviewKind.CREATED -> "已自动补记一笔"
-    ReviewKind.ENRICHED -> "已补全分类"
-}
-
-private fun ReviewKind.headsUpText(): String = when (this) {
-    ReviewKind.CREATED -> "点开可以改分类或撤销"
-    ReviewKind.ENRICHED -> "点开可以改成别的分类"
 }

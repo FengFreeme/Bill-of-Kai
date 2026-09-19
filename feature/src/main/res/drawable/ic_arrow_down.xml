@@ -1,7 +1,24 @@
+<!--
+  向下箭头（Ionicons arrow-down 的等价画法）。
+
+  用途：「转入」分类图标 —— 表示钱进入当前账户。与 ic_arrow_up 成对，
+  两者的描边风格与其它自托管 Ionicons 一致（512 视口 / 32 描边 / 圆头圆角）。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="512"
     android:viewportHeight="512">
-    <path android:fillColor="#FF000000" android:pathData="M256 464a16 16 0 01-11.31-4.69l-136-136a16 16 0 0122.62-22.62L240 409.37V64a16 16 0 0132 0v345.37l108.69-108.68a16 16 0 0122.62 22.62l-136 136A16 16 0 01256 464z" />
+    <path
+        android:pathData="M256,80 L256,352"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M176,272 L256,352 L336,272"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

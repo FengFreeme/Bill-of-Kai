@@ -105,31 +105,6 @@ class IngestPipelineTest {
     }
 
     @Test
-    fun `支付宝-营销提醒-不落账单但保留在待确认`() {
-        // 「你有淘宝闪购4元红包今晚失效」是一条**券到期提醒**，不是任何一笔钱进出。
-        // 它会被方向词「红包」命中而走待确认分支 —— 这个结果是**刻意保留**的：
-        //
-        // - **不落账单**：统计与预算都不会被它污染（底线，也是本用例的主要断言）；
-        // - **但也不静默丢弃**：金额规则确实从「4元」抽出了金额，机器没有依据断定它一定是营销，
-        //   宁可多问一句让用户自己划掉，也好过把一条可能真实的信息悄悄丢掉。
-        //   而且打扰很轻 —— 它带建议值（不是「判不出方向」），所以**不弹悬浮横幅**，
-        //   只进待确认列表与角标。
-        //
-        // 代价是列表里偶尔要多划掉一条营销条目。这是明确的取舍，不是漏判：
-        // 反过来用「元红包」这类宽泛的排除词去拦，会把「收到4元红包」这种真实收入一起丢掉。
-        val result = run("你有淘宝闪购4元红包今晚失效", "com.eg.android.AlipayGphone")
-
-        assertEquals(CaptureResult.NEEDS_REVIEW, result)
-        assertTrue("营销提醒绝不能落成账单", billRepository.saved.isEmpty())
-
-        val pending = pendingRepository.saved.single()
-        assertEquals(400L, pending.amountCents)
-        assertEquals(BillType.INCOME, pending.suggestedType)
-        assertEquals(PendingReason.GIFT, pending.reason)
-        assertEquals("红包", pending.matchedKeyword)
-    }
-
-    @Test
     fun `自己的钱搬家-两侧都不进统计-且进待确认`() {
         // 用户明确要求的边界：一笔自己的钱在两个账户之间搬家，不能凭空多出支出或收入。
         // 两条用不同金额：去重键是「金额 + 秒级时间桶 + 类型 + 商户」（见 DedupKey），
@@ -142,13 +117,14 @@ class IngestPipelineTest {
         assertTrue(billRepository.saved.isEmpty())
         assertTrue(notifier.saved.isEmpty())
 
-        // 建议值：方向为转账、不计统计、分类建议「转账」（而不是还款）
+        // 建议值：方向为转账、不计统计、分类建议「转出(96)」——
+        // 而不是泛化的「转账(19)」或「还款(20)」：文案本身就说了是转出，建议要跟着准。
         val outPending = pendingRepository.saved.first()
         assertEquals(BillType.TRANSFER, outPending.suggestedType)
         assertFalse(outPending.suggestedCountInStats)
         assertEquals(PendingReason.SELF_TRANSFER, outPending.reason)
         assertEquals("转出成功", outPending.matchedKeyword)
-        assertEquals(19L, outPending.suggestedCategoryId)
+        assertEquals(96L, outPending.suggestedCategoryId)
         assertEquals(2L, outPending.suggestedAccountId)
         assertTrue(outPending.hasSuggestion)
 

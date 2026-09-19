@@ -5,31 +5,25 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
-import com.kai.bill.core.common.overlay.ReviewKind
+import com.kai.bill.core.common.overlay.ReviewCardReason
 import com.kai.bill.core.design.theme.BillOfKaiTheme
 import com.kai.bill.data.notify.ReviewCardContract
 import com.kai.bill.feature.review.ReviewCardRoute
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
- * 确认卡片 —— **点通知**进来的那条路径。
+ * 确认卡片 —— 识别成功并落库后自动弹出的**半透明浮层**。
  *
- * 自动弹出那条路径**不走这里**：它由无障碍悬浮层承载（见 [OverlayReviewCardHost]），
- * 因为后台启动 Activity 的官方豁免里没有「无障碍服务」，系统会静默拦截，
- * 真机表现就是「卡片一次都没弹出来过」。
- *
- * 本 Activity 只服务于「用户主动点通知」这一种前台场景 —— 那种情况下启动 Activity
- * 不受任何限制，这也是当初保留它作为**兜底通道**的原因：
- * 悬浮层挂不上（服务被停 / 进程异常）时，至少还有通知可点。
- *
- * 两个刻意的选择：
- * 1. `noHistory` + `excludeFromRecents`：它是一次性浮层，不该出现在最近任务里，
- *    也不该在用户切走后还留在栈里；
- * 2. 改分类**留在卡片里完成**（不再跳主界面的编辑页）—— 两条路径的行为必须一致，
- *    否则「悬浮层里能直接改、点通知进来却要跳走」会让人困惑。
+ * 三个刻意的选择：
+ * 1. **不是 Dialog 而是 Activity**：只有 Activity 能被无障碍服务从后台 `startActivity` 拉起，
+ *    `DialogFragment` 需要先有宿主 Activity 在前台；
+ * 2. **不用 `SYSTEM_ALERT_WINDOW`**：那要额外权限，而无障碍服务本身是
+ *    Android 10+ 后台启动 Activity 的豁免来源之一；
+ * 3. **`noHistory` + `excludeFromRecents`**：它是一次性浮层，不该出现在最近任务里，
+ *    也不该在用户切走后还留在栈里。
  *
  * 由 `data` 层用显式 action 拉起（见 [ReviewCardContract]）—— 那里看不到本类，
- * 因此两边只共享 action 与 extra 字符串常量，而不是类引用。
+ * 因此两边只共享一个 action 字符串常量，而不是类引用。
  */
 @AndroidEntryPoint
 class ReviewCardActivity : ComponentActivity() {
@@ -42,19 +36,24 @@ class ReviewCardActivity : ComponentActivity() {
      */
     private val billIdState = mutableStateOf(0L)
 
-    /** 卡片种类（新建 / 补分类）；同样要能随 [onNewIntent] 变化 */
-    private val kindState = mutableStateOf(ReviewKind.CREATED)
+    /**
+     * 当前展示的来由（新建 / 补分类）。
+     *
+     * 与 [billIdState] 同样用可观察状态：走通知兜底路径时，只能靠 Intent 把来由带进来，
+     * 而卡片文案必须跟着它变（见 [ReviewCardReason]）。
+     */
+    private val reasonState = mutableStateOf(ReviewCardReason.CREATED)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         billIdState.value = intent.readReviewBillId()
-        kindState.value = intent.readReviewKind()
+        reasonState.value = intent.readReviewReason()
 
         setContent {
             BillOfKaiTheme {
                 ReviewCardRoute(
                     billId = billIdState.value,
-                    kind = kindState.value,
+                    reason = reasonState.value,
                     onDismiss = { finish() }
                 )
             }
@@ -65,15 +64,20 @@ class ReviewCardActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         billIdState.value = intent.readReviewBillId()
-        kindState.value = intent.readReviewKind()
+        reasonState.value = intent.readReviewReason()
     }
+
 }
 
 /**
- * 「去改这一笔」的 Intent 契约。
+ * 「从外部 Intent 直达账单编辑页」的 Intent 契约。
  *
- * 卡片本身**不再用它**（改分类已改为在卡内完成），但主界面仍然接受它 ——
- * 保留是为了让「带账单 id 启动 App 并直接进编辑页」这条外部入口继续可用。
+ * 与 `data` 的 [ReviewCardContract] 分开：那个是「谁来显示卡片」（data → app），
+ * 这个是「把用户送到编辑页」（app 内部）。混在一起会让 `data` 的契约表里多出一个
+ * 它永远不会写入的字段。
+ *
+ * 注意：确认卡片改成「就地弹出分类选择」后，卡片这条路径**不再写它**；
+ * 现在只剩 `MainActivity` 在读取，保留是为了不破坏「外部 Intent 带账单 id 进来」的通路。
  */
 object EditBillContract {
 
@@ -84,9 +88,12 @@ object EditBillContract {
 private fun Intent?.readReviewBillId(): Long =
     this?.getLongExtra(ReviewCardContract.EXTRA_BILL_ID, 0L) ?: 0L
 
-/** 缺省按「新建一笔」展示：老版本通知里没有这个 extra，不能因此崩掉或显示空白 */
-private fun Intent?.readReviewKind(): ReviewKind =
-    runCatching {
-        this?.getStringExtra(ReviewCardContract.EXTRA_REVIEW_KIND)
-            ?.let { name -> ReviewKind.valueOf(name) }
-    }.getOrNull() ?: ReviewKind.CREATED
+/**
+ * 读来由；缺失或取值不认识时回退「新建」。
+ *
+ * 回退而不是报错：这只是文案差异，旧版本发的 Intent（没有这个 extra）也应正常显示卡片。
+ */
+private fun Intent?.readReviewReason(): ReviewCardReason =
+    this?.getStringExtra(ReviewCardContract.EXTRA_REASON)
+        ?.let { name -> ReviewCardReason.entries.firstOrNull { it.name == name } }
+        ?: ReviewCardReason.CREATED

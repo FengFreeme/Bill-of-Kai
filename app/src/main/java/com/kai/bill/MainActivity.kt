@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -70,8 +71,8 @@ class MainActivity : ComponentActivity() {
     /**
      * 待展示的更新公告；null 表示不展示。
      *
-     * 用 [mutableStateOf] 而不是普通字段：判断是异步的（要读一次 DataStore），
-     * 结果回来时界面早已组合完成，只有可观察状态才能让卡片出现。
+     * 用 [mutableStateOf] 而不是普通字段：判断是异步的（要读一次 DataStore 才知道
+     * 这个版本看没看过），结果回来时界面早已组合完成，只有可观察状态才能让卡片出现。
      */
     private val releaseNote = mutableStateOf<ReleaseNote?>(null)
 
@@ -91,8 +92,9 @@ class MainActivity : ComponentActivity() {
         notificationRoute.value = intent.toNotificationRoute() ?: intent.toEditBillRoute()
 
         // 更新公告：装上的版本 ≠ 上次看过并关掉的版本时，弹一次。
-        // 放在冷启动而不是挂在某个页面上：它是应用级事件，挂到首页只会让「首页要不要负责这件事」
-        // 变成每次新增入口都要重新回答的问题。版本没有对应公告时静默跳过（forVersion 返回 null）。
+        // 放在冷启动而不是挂在某个页面上：它是**应用级事件**，挂到首页只会让
+        // 「首页要不要负责这件事」变成每次新增页面都要重新回答的问题。
+        // 版本没有对应公告时静默跳过（forVersion 返回 null）
         lifecycleScope.launch {
             val currentVersion = BuildConfig.VERSION_NAME
             if (prefs.lastSeenReleaseVersion() != currentVersion) {
@@ -113,6 +115,9 @@ class MainActivity : ComponentActivity() {
                 cardAlpha = config.cardAlpha,
                 hasBackgroundImage = config.backgroundUri != null
             ) {
+                // 当前版本的公告文案；null = 这个版本没写公告。设置页据此决定显不显示入口
+                val currentNote = remember { ReleaseNotes.forVersion(BuildConfig.VERSION_NAME) }
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     AppRoot(
                         backgroundPath = config.backgroundUri,
@@ -121,9 +126,12 @@ class MainActivity : ComponentActivity() {
                         backgroundOffsetX = config.backgroundOffsetX,
                         backgroundOffsetY = config.backgroundOffsetY,
                         notificationRoute = notificationRoute.value,
-                        onNotificationRouteHandled = { notificationRoute.value = null }
+                        onNotificationRouteHandled = { notificationRoute.value = null },
+                        releaseNotesVersion = currentNote?.version,
+                        // 设置页的「更新公告」入口：复用冷启动那张卡片，只是由用户主动唤出
+                        onReleaseNotesClick = { currentNote?.let { releaseNote.value = it } }
                     )
-                    // 公告浮在最上层（含底栏之上）：它是应用级提示，不属于任何一个页面
+                    // 公告浮在最上层（底栏之上）：它是应用级提示，不属于任何一个页面
                     releaseNote.value?.let { note ->
                         ReleaseNotesDialog(note = note, onDismiss = ::dismissReleaseNote)
                     }
@@ -135,7 +143,7 @@ class MainActivity : ComponentActivity() {
     /**
      * 关掉更新公告，并记下「这个版本已经看过了」。
      *
-     * 标记写在**用户关掉的那一刻**，而不是启动时：进程若在卡片弹出之前被杀，
+     * 标记写在**用户关掉的那一刻**，而不是启动时：进程若在公告弹出之前被杀，
      * 下次启动应当照常再弹一次，而不是把这条公告永久吞掉。
      */
     private fun dismissReleaseNote() {
@@ -191,7 +199,9 @@ private fun AppRoot(
     backgroundOffsetX: Float,
     backgroundOffsetY: Float,
     notificationRoute: String?,
-    onNotificationRouteHandled: () -> Unit
+    onNotificationRouteHandled: () -> Unit,
+    releaseNotesVersion: String?,
+    onReleaseNotesClick: () -> Unit
 ) {
     val navController = rememberNavController()
 
@@ -225,6 +235,8 @@ private fun AppRoot(
                     backgroundPath = backgroundPath,
                     notificationRoute = notificationRoute,
                     onNotificationRouteHandled = onNotificationRouteHandled,
+                    releaseNotesVersion = releaseNotesVersion,
+                    onReleaseNotesClick = onReleaseNotesClick,
                     modifier = Modifier.fillMaxSize()
                 )
             }

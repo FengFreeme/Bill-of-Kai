@@ -29,10 +29,6 @@ private val NeutralLight = Color(0xFF9AA5B1)   // 转账 / 不计入统计
 private val NeutralDark = Color(0xFF7C8894)
 private val AlertLight = Color(0xFFFF2800)   // 超支 / 警示 · 鲜红（#FF2800）
 private val AlertDark = Color(0xFFFF2800)
-private val ProgressSafeLight = Color(0xFF52CC9B)   // 预算进度 · 余量充足（浅绿）
-private val ProgressSafeDark = Color(0xFF6FE0B6)
-private val ProgressWarnLight = Color(0xFFF0A63C)   // 预算进度 · 开始紧张（琥珀）
-private val ProgressWarnDark = Color(0xFFFFB74D)
 
 // ============================================================================
 // MINT 青草绿（默认）—— 偏草绿、清新，避免过深沉闷与偏青薄荷感
@@ -91,18 +87,14 @@ internal val MintLightExtended = ExtendedColors(
     expense = ExpenseLight,
     income = IncomeLight,
     neutral = NeutralLight,
-    alert = AlertLight,
-    progressSafe = ProgressSafeLight,
-    progressWarn = ProgressWarnLight
+    alert = AlertLight
 )
 
 private val MintDarkExtended = ExtendedColors(
     expense = ExpenseDark,
     income = IncomeDark,
     neutral = NeutralDark,
-    alert = AlertDark,
-    progressSafe = ProgressSafeDark,
-    progressWarn = ProgressWarnDark
+    alert = AlertDark
 )
 
 // ============================================================================
@@ -160,18 +152,14 @@ private val SkyLightExtended = ExtendedColors(
     expense = ExpenseLight,
     income = IncomeLight,
     neutral = NeutralLight,
-    alert = AlertLight,
-    progressSafe = ProgressSafeLight,
-    progressWarn = ProgressWarnLight
+    alert = AlertLight
 )
 
 private val SkyDarkExtended = ExtendedColors(
     expense = ExpenseDark,
     income = IncomeDark,
     neutral = NeutralDark,
-    alert = AlertDark,
-    progressSafe = ProgressSafeDark,
-    progressWarn = ProgressWarnDark
+    alert = AlertDark
 )
 
 // ============================================================================
@@ -229,18 +217,14 @@ private val LilacLightExtended = ExtendedColors(
     expense = ExpenseLight,
     income = IncomeLight,
     neutral = NeutralLight,
-    alert = AlertLight,
-    progressSafe = ProgressSafeLight,
-    progressWarn = ProgressWarnLight
+    alert = AlertLight
 )
 
 private val LilacDarkExtended = ExtendedColors(
     expense = ExpenseDark,
     income = IncomeDark,
     neutral = NeutralDark,
-    alert = AlertDark,
-    progressSafe = ProgressSafeDark,
-    progressWarn = ProgressWarnDark
+    alert = AlertDark
 )
 
 // ============================================================================

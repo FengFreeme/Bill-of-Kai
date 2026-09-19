@@ -40,25 +40,37 @@ object DefaultCategories {
         Category(18, "其他收入", "add", "#9AA5B1", BillType.INCOME, null, 6, true)
     )
 
+    /**
+     * 转账（一级）与还款。
+     *
+     * 转账有**两个方向，且必须区分**（2026-09-20 真机样本）：
+     * - **转出**：钱从我这出去 —— 微信「`周建鑫已收款 ¥200.00`」（付款方视角，对方收了）；
+     * - **转入**：钱进我这来 —— 微信「`你已收款，资金已存入零钱 ¥100.00`」。
+     *
+     * 两者的页面文案**都带「收款」二字**，只按动作词判会把「转出」错记成一笔收入。
+     * 方向在 `DefaultMatchKeywords` 的转账组里单独收敛，这里只声明落到哪个分类；
+     * 转入 / 转出是**转账的下钻项**（见 [subTransfer]），不是与它并列的一级分类。
+     *
+     * 19 转账保留为**泛化项**：只认出「这是笔转账」但判不出方向时用它兜底 ——
+     * 历史账单引用的就是它，语义不能改（改了老账目会掉进「未分类」）。
+     */
     private val transfer: List<Category> = listOf(
         Category(19, "转账", "swap-horizontal", "#7C8894", BillType.TRANSFER, null, 1, true),
         Category(20, "还款", "refresh-circle", "#849994", BillType.TRANSFER, null, 2, true)
     )
 
     /**
-     * 二级分类（转账）。
+     * 二级分类（转账）：挂在「19 转账」下。
      *
-     * 转账不计入收支统计，但**钱是进来了还是出去了**是用户看账单时的第一诉求：
-     * 「朋友还我 200」与「我借给朋友 200」金额完全一样，光看「转账」两个字分不出来，
-     * 所以按方向拆成转入 / 转出。
+     * 为什么转入 / 转出是**子分类**而不是并列的一级：它们只是同一件事的两个方向，
+     * 选中它们时的语义仍是「转账（不计收支）」；做成一级会让转账从一个概念变成三个，
+     * 统计与筛选也会多出两个本不存在的维度。
      *
-     * id 从 96 起：1..20 已被历史账单引用（不可改动），21..95 已被支出 / 收入二级占用，
-     * 只做纯增量，因此同样**不改表、不 bump 数据库版本**。
+     * 与「20 还款」的分工：还款（还信用卡 / 花呗）是独立场景，仍留在一级。
      */
     private val subTransfer: List<Category> = listOf(
-        // 转账(19)
-        Category(96, "转入", "arrow-down", "#7C8894", BillType.TRANSFER, 19, 1, true),
-        Category(97, "转出", "arrow-up", "#7C8894", BillType.TRANSFER, 19, 2, true)
+        Category(96, "转出", "arrow-up", "#7C8894", BillType.TRANSFER, 19, 1, true),
+        Category(97, "转入", "arrow-down", "#7C8894", BillType.TRANSFER, 19, 2, true)
     )
 
     /**
@@ -175,5 +187,6 @@ object DefaultCategories {
         Category(95, "中奖", "trophy", "#9AA5B1", BillType.INCOME, 18, 3, true)
     )
 
-    val all: List<Category> = expense + income + transfer + subExpense + subIncome + subTransfer
+    val all: List<Category> =
+        expense + income + transfer + subExpense + subIncome + subTransfer
 }

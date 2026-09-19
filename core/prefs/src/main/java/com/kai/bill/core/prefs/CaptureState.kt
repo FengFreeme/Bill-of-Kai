@@ -73,6 +73,10 @@ data class CaptureDiagEntry(
  *           它存在的理由：卡片投递是**会静默失败**的环节 ——
  *           `WindowManager.addView` 抛异常时用户完全无感，
  *           系统也只在 logcat 里留一行。没有这个字段，就只能靠反复付真钱去猜。
+ * @property hintDelivery 最近一次**提示条投递**的结果（与 [cardDelivery] 同构）。
+ *           `SKIPPED_CARD` 表示当时正显示确认卡片、按优先级让给了卡片；
+ *           `SKIPPED_DUPLICATE` 表示与上一条提示重复、被去重挡下 ——
+ *           这两个「跳过」都是设计内的，不是故障。
  */
 data class CaptureState(
     val smsLastScanMillis: Long = 0L,
@@ -88,5 +92,6 @@ data class CaptureState(
     val signalLastText: String = "",
     val signalLastAtMillis: Long = 0L,
     val signalRecent: List<CaptureDiagEntry> = emptyList(),
-    val cardDelivery: String = ""
+    val cardDelivery: String = "",
+    val hintDelivery: String = ""
 )

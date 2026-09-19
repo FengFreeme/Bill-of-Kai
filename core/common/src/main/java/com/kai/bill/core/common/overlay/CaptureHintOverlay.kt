@@ -1,0 +1,73 @@
+package com.kai.bill.core.common.overlay
+
+/**
+ * 提示条的结论类型。
+ *
+ * 只收「**本来完全没有反馈**」的结果（见下），因此取值刻意很少：
+ * 新建 / 补分类已经有确认卡片（[ReviewCardOverlay]），再来一条提示条是重复打扰。
+ */
+enum class CaptureHintKind {
+
+    /**
+     * 这笔早就记过了，本次识别无需再记。
+     *
+     * 这是真机最高频的形态：付款 → 通知先落库 → 用户点开账单详情页 →
+     * 无障碍读到同一笔 → 判定「已记录」。用户此时看不到任何变化，
+     * 不给提示就会误以为「自动记账没生效」。
+     */
+    ALREADY_RECORDED,
+
+    /** 判不出是支出还是收入，已进待确认列表 */
+    NEEDS_REVIEW
+}
+
+/**
+ * 一条屏幕提示的内容。
+ *
+ * 只带**语义字段**，文案由 UI 层拼 —— `data` 层不该出现给用户看的句子。
+ *
+ * @property kind 结论类型
+ * @property amountCents 识别到的金额（分）；没抽到金额时为 null。
+ *         [CaptureHintKind.ALREADY_RECORDED] 用不到它（那句话里不该出现金额：
+ *         「已记录」是结论，再报一遍金额会让人以为又记了一笔）
+ */
+data class CaptureHint(
+    val kind: CaptureHintKind,
+    val amountCents: Long? = null
+)
+
+/**
+ * 采集结果的**轻量屏幕提示** —— 悬浮条。
+ *
+ * ## 与确认卡片的分工
+ *
+ * | 结果 | 反馈 |
+ * |---|---|
+ * | 新建 / 补分类 | 确认卡片（可改分类、可撤销，需要用户操作） |
+ * | **已记录 / 待确认** | **本提示条**（只是告知，无需操作） |
+ * | 抽不到金额 / 排除 / 失败 | 不提示（绝大多数页面都属于这一类，提示会刷屏） |
+ *
+ * ## 实现约定
+ *
+ * 1. 窗口同样必须用 `TYPE_ACCESSIBILITY_OVERLAY`（理由见 [ReviewCardOverlay]）；
+ * 2. 窗口**必须带 `FLAG_NOT_TOUCHABLE`** —— 提示条只是「告知」，
+ *    **绝不能挡住用户在底层 App 里的操作**：用户看到提示的同一时刻往往正要点页面上的按钮，
+ *    一条能吃掉触摸的悬浮条会让人以为手机卡了。
+ *    有了它，窗口即使铺满整屏也不会拦住任何操作，位置就能交给 Compose 自己摆；
+ * 3. 显示若干秒后**自动消失**，不需要用户处理；
+ * 4. 送不到不得抛异常、不得影响采集链路（同 [ReviewCardOverlay]）。
+ */
+interface CaptureHintOverlay {
+
+    /**
+     * 显示一条提示；已有提示会被替换。若此刻正显示确认卡片，实现应**放弃显示提示**，
+     * 避免把用户正在操作的卡片顶掉（卡片优先级更高）。
+     *
+     * @param hint 提示内容
+     * @return true 表示提示条已显示在屏幕上
+     */
+    suspend fun show(hint: CaptureHint): Boolean
+
+    /** 移除提示条；未显示时是空操作（幂等） */
+    fun dismiss()
+}

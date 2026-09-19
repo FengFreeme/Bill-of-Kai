@@ -82,7 +82,8 @@ class KaiPrefs @Inject constructor(
                 signalLastText = prefs[Keys.SIGNAL_LAST_TEXT].orEmpty(),
                 signalLastAtMillis = prefs[Keys.SIGNAL_LAST_AT] ?: 0L,
                 signalRecent = CaptureDiagCodec.decode(prefs[Keys.SIGNAL_DIAG_HISTORY]),
-                cardDelivery = prefs[Keys.CARD_DELIVERY].orEmpty()
+                cardDelivery = prefs[Keys.CARD_DELIVERY].orEmpty(),
+                hintDelivery = prefs[Keys.HINT_DELIVERY].orEmpty()
             )
         }
 
@@ -279,18 +280,31 @@ class KaiPrefs @Inject constructor(
         dataStore.edit { prefs -> prefs[Keys.CARD_DELIVERY] = value.take(CAPTURE_RAW_MAX_CHARS) }
     }
 
+    /**
+     * 记录最近一次**提示条投递**的结果。
+     *
+     * 与 [recordCardDelivery] 同一套理由（见 [CaptureState.hintDelivery]）：两者都是
+     * `WindowManager.addView` 那条会静默失败的路径，只是内容不同 ——
+     * 卡片那边查「为什么没弹卡片」，提示条这边查「为什么没弹提示」。
+     *
+     * @param value 结果编码或失败原因，见 [CaptureState.hintDelivery]
+     */
+    suspend fun recordHintDelivery(value: String) {
+        dataStore.edit { prefs -> prefs[Keys.HINT_DELIVERY] = value.take(CAPTURE_RAW_MAX_CHARS) }
+    }
+
     /** 临时诊断：无障碍采集时把每个窗口的抽取片段写进来，便于真机定位金额所在窗口 */
     suspend fun setA11yDebug(value: String) {
         dataStore.edit { prefs -> prefs[Keys.ACCESSIBILITY_DEBUG] = value.take(4000) }
     }
 
     /**
-     * 上次对用户展示过更新公告的版本号；**从未展示过时返回空串**。
+     * 读「上次看过并关掉的更新公告版本」。
      *
-     * 只存「版本号字符串」而不是布尔标记：用户可能跨版本升级（1.2.0 → 1.5.0 直接跳，
-     * 中间某个版本没装过），存布尔量就只能表达「看过/没看过」，跨版本时会把该看的新公告吞掉。
+     * 与安装包的 `versionName` 比对：**不一致才弹公告**。空串表示从来没看过，
+     * 因此全新安装（或清过数据）第一次启动必定会弹一次当前版本的公告。
      *
-     * NOTE: 一次性读取即可，不做成 Flow —— 调用点是冷启动那一次判断，之后不再关心它变化。
+     * @return 版本号；没记录过返回空串
      */
     suspend fun lastSeenReleaseVersion(): String = dataStore.data
         .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
@@ -298,10 +312,13 @@ class KaiPrefs @Inject constructor(
         .orEmpty()
 
     /**
-     * 记下已展示过更新公告的版本，同一版本不再重复打扰。
+     * 记下已展示过公告的版本，同一版本不再重复打扰。
      *
-     * 在用户**关掉公告卡片**时才写入，而不是一启动就写：进程若在展示前被杀，
-     * 下次启动应当照常再弹一次，而不是把这条公告永久吞掉。
+     * 在用户**关掉公告卡片**的那一刻才写，而不是一启动就写：
+     * 进程若在公告弹出之前就被杀，下次启动应当照常再弹一次，
+     * 而不是把这条公告永久吞掉。
+     *
+     * @param version 当前安装包的 `versionName`
      */
     suspend fun markReleaseVersionSeen(version: String) {
         dataStore.edit { prefs -> prefs[Keys.LAST_SEEN_RELEASE_VERSION] = version }
@@ -330,6 +347,7 @@ class KaiPrefs @Inject constructor(
         val SIGNAL_LAST_AT = longPreferencesKey("signal_last_at")
         val SIGNAL_DIAG_HISTORY = stringPreferencesKey("signal_diag_history")
         val CARD_DELIVERY = stringPreferencesKey("card_delivery")
+        val HINT_DELIVERY = stringPreferencesKey("hint_delivery")
         val ACCESSIBILITY_DEBUG = stringPreferencesKey("a11y_debug")
         val LAST_SEEN_RELEASE_VERSION = stringPreferencesKey("last_seen_release_version")
     }

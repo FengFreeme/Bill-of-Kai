@@ -93,12 +93,15 @@ fun PermissionCheckScreen(
                 connected = captureState.accessibilityEnabled,
                 testHint = uiState.cardTestHint,
                 cardDelivery = captureState.cardDelivery,
+                hintTestHint = uiState.hintTestHint,
+                hintDelivery = captureState.hintDelivery,
                 lastResult = captureState.signalLastResult,
                 lastText = captureState.signalLastText,
                 lastAtMillis = captureState.signalLastAtMillis,
                 historyCount = captureState.signalRecent.size,
                 onOpen = { viewModel.onStepAction(GuideAction.ACCESSIBILITY_SETTINGS) },
                 onTestCard = viewModel::testCard,
+                onTestHint = viewModel::testHint,
                 onShowHistory = { showSignalHistory = true }
             )
         }
@@ -322,12 +325,15 @@ private fun AccessibilityCard(
     connected: Boolean,
     testHint: String,
     cardDelivery: String,
+    hintTestHint: String,
+    hintDelivery: String,
     lastResult: String,
     lastText: String,
     lastAtMillis: Long,
     historyCount: Int,
     onOpen: () -> Unit,
     onTestCard: () -> Unit,
+    onTestHint: () -> Unit,
     onShowHistory: () -> Unit
 ) {
     val (dotColor, statusText) = when {
@@ -434,6 +440,28 @@ private fun AccessibilityCard(
                 if (cardDelivery.isNotBlank()) {
                     Text(
                         text = "卡片投递结果：$cardDelivery",
+                        style = AppTheme.typography.bodySmall,
+                        color = AppTheme.color.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // 提示条走的是同一条会静默失败的路径（WindowManager.addView），
+                // 因此同样给一个不花钱的验证入口
+                OutlinedButton(onClick = onTestHint, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "测试提示条")
+                }
+                if (hintTestHint.isNotBlank()) {
+                    Text(
+                        text = hintTestHint,
+                        style = AppTheme.typography.bodySmall,
+                        color = AppTheme.color.onSurfaceVariant
+                    )
+                }
+                if (hintDelivery.isNotBlank()) {
+                    Text(
+                        text = "提示条投递结果：$hintDelivery",
                         style = AppTheme.typography.bodySmall,
                         color = AppTheme.color.onSurfaceVariant,
                         maxLines = 3,

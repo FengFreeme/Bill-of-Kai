@@ -66,6 +66,10 @@ import com.kai.bill.feature.stats.StatsRoute
  * @param notificationRoute 通知点击带来的目标路由；由 `MainActivity` 从 Intent 解析后传入，
  *        消费一次即由 [onNotificationRouteHandled] 清空（否则每次重组都会重新导航）
  * @param onNotificationRouteHandled 目标路由已被消费的回调
+ * @param releaseNotesVersion 当前安装版本的公告版本号（null = 该版本无公告，设置页不显示入口）。
+ *        版本号由 `MainActivity` 传进来，而不是让 `feature` 去读 `BuildConfig`：
+ *        那样 `feature` 就得反向依赖 `app`，而公告本就是我们刻意留在 app 层的**应用级**职责
+ * @param onReleaseNotesClick 设置页点了「更新公告」；由 `MainActivity` 弹出公告卡片
  * @param modifier 外部修饰符
  */
 @Composable
@@ -75,6 +79,8 @@ fun KaiNavHost(
     backgroundPath: String? = null,
     notificationRoute: String? = null,
     onNotificationRouteHandled: () -> Unit = {},
+    releaseNotesVersion: String? = null,
+    onReleaseNotesClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val tabBottomPad = KaiBottomBarHeight + tabBottomInset
@@ -128,7 +134,9 @@ fun KaiNavHost(
                 onBudgetClick = { navController.navigate(Route.BUDGET) },
                 onReviewClick = { navController.navigate(Route.NEEDS_REVIEW) },
                 onOnboardingClick = { navController.navigate(Route.ONBOARDING) },
-                onBackupClick = { navController.navigate(Route.BACKUP) }
+                onBackupClick = { navController.navigate(Route.BACKUP) },
+                releaseNotesVersion = releaseNotesVersion,
+                onReleaseNotesClick = onReleaseNotesClick
             )
         }
 

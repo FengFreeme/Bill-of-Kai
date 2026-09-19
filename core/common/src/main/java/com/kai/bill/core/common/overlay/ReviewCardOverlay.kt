@@ -22,6 +22,24 @@ package com.kai.bill.core.common.overlay
  *
  * 因此：**不要再退回到启动 Activity 的方案**，也不要为此申请悬浮窗权限。
  */
+
+/**
+ * 卡片要解释的**来由**：这笔是刚记下的，还是本来就有、只是把分类补全了。
+ *
+ * 两者的用户预期完全不同：
+ * - 「新建」需要用户当场确认分类对不对（钱是新记进去的）；
+ * - 「补分类」则要说明「这笔我早就记过了，系统只改了分类」——
+ *   否则用户看到卡片会以为程序又记了一笔（同一笔钱被记两次是记账 App 最严重的错觉）。
+ */
+enum class ReviewCardReason {
+
+    /** 由这次识别**新建**的一笔（`ReconcileOutcome.CREATED`） */
+    CREATED,
+
+    /** 已有账单，这次只是**补上了分类**（`ReconcileOutcome.ENRICHED`） */
+    ENRICHED
+}
+
 interface ReviewCardOverlay {
 
     /**
@@ -30,10 +48,10 @@ interface ReviewCardOverlay {
      * 若已有卡片在显示，实现应先移除旧的再显示新的（同一时刻只允许一张）。
      *
      * @param billId 账单主键
-     * @param kind 这张卡片是「新建一笔」还是「补分类」，决定文案与可操作项
+     * @param reason 这笔的来由（新建 / 补分类），决定卡片文案
      * @return true 表示卡片已显示在屏幕上
      */
-    suspend fun show(billId: Long, kind: ReviewKind): Boolean
+    suspend fun show(billId: Long, reason: ReviewCardReason = ReviewCardReason.CREATED): Boolean
 
     /**
      * 用**最近一笔账单**显示卡片，供引导页的「测试确认卡片」按钮使用 ——

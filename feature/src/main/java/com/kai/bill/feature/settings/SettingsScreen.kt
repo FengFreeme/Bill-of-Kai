@@ -37,6 +37,12 @@ import com.kai.bill.feature.common.SectionTitle
  *
  * M0 外观可点；其余入口跳转占位二级页，方便对齐文档路由树。
  * 本页无状态、无 ViewModel：只做入口聚合。
+ *
+ * @param releaseNotesVersion 当前安装版本的公告版本号（即 `versionName`）；
+ *   null 表示这个版本还没有公告文案，此时**不显示该入口** ——
+ *   否则就是一个点下去没有任何反应的按钮
+ * @param onReleaseNotesClick 查看更新公告。公告卡片由 `MainActivity` 在应用最上层弹出：
+ *   它是**应用级**内容（冷启动也会自动弹），不属于任何一个页面，页面不该自己再画一份
  */
 @Composable
 fun SettingsScreen(
@@ -48,6 +54,8 @@ fun SettingsScreen(
     onReviewClick: () -> Unit = {},
     onOnboardingClick: () -> Unit = {},
     onBackupClick: () -> Unit = {},
+    releaseNotesVersion: String? = null,
+    onReleaseNotesClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -114,6 +122,18 @@ fun SettingsScreen(
                 leading = { ShieldGlyph(it) },
                 onClick = onOnboardingClick
             )
+        }
+        // 更新公告：只在「当前版本有公告文案」时出现。
+        // 位置放最后：它是「想起来才看」的内容，不该挤在常用设置前面
+        releaseNotesVersion?.let { version ->
+            item(key = "release_notes") {
+                SettingsRow(
+                    title = "更新公告",
+                    subtitle = "当前版本 $version 改了什么",
+                    leading = { DocGlyph(it) },
+                    onClick = onReleaseNotesClick
+                )
+            }
         }
     }
 }
@@ -346,6 +366,6 @@ private fun Dot(size: Dp, color: Color) {
 @Composable
 private fun SettingsScreenLightPreview() {
     BillOfKaiTheme(palette = AppPalette.MINT, darkMode = DarkMode.LIGHT) {
-        SettingsScreen(onAppearanceClick = {})
+        SettingsScreen(onAppearanceClick = {}, releaseNotesVersion = "1.2.0")
     }
 }

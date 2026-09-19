@@ -68,10 +68,9 @@ private const val SUB_GRID_ANIM_MILLIS = 300
  * @param onSelect 选中回调（用于二级或无子分类的一级）
  * @param onParentClick 点击一级：选中并切换展开/收起
  * @param onManageCategory 点击「＋」：跳分类管理；入参是「＋」所在的**一级分类 id**，
- *   分类管理据此定位到对应大类并直接在其下新增，用户不必自己再找一遍
- * @param allowAddCategory 是否在二级网格末尾显示「＋新增」。
- *   确认卡片的悬浮层必须传 `false`：那里点「＋」要跳转分类管理，而**从悬浮层
- *   启动 Activity 属于后台启动**，会被系统静默拦截 —— 留着就是一个点了没反应的死按钮。
+ *   分类管理据此定位到对应大类并直接在其下新增，用户不必自己再找一遍。
+ *   **传 null 表示不显示这一格** —— 确认卡片的悬浮层没有导航栈可跳，
+ *   留着「＋」只会是一个点了没反应的按钮
  * @param modifier 外部修饰符
  */
 @Composable
@@ -81,8 +80,7 @@ fun CategoryPicker(
     expandedParentId: Long?,
     onSelect: (Long) -> Unit,
     onParentClick: (Long) -> Unit,
-    onManageCategory: (Long) -> Unit,
-    allowAddCategory: Boolean = true,
+    onManageCategory: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val expandedIndex = remember(tree, expandedParentId) {
@@ -151,9 +149,11 @@ fun CategoryPicker(
                     categories = expandedChildren,
                     selectedId = selectedId,
                     onSelect = onSelect,
-                    // 「＋」带着所属大类 id 走，分类管理要定位到它
-                    onManageCategory = { ownerParentId?.let(onManageCategory) },
-                    allowAddCategory = allowAddCategory,
+                    // 「＋」带着所属大类 id 走，分类管理要定位到它；
+                    // 调用方传 null（如确认卡片的悬浮层，没有导航栈可跳）时整格不出现
+                    onManageCategory = onManageCategory?.let { callback ->
+                        { ownerParentId?.let(callback) }
+                    },
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
@@ -207,19 +207,18 @@ private fun CategoryCell(
     }
 }
 
-/** 二级网格：末尾追加一个「＋新增」占位（以 null 表示）。 */
+/** 二级网格：末尾追加一个「＋新增」占位（以 null 表示）；[onManageCategory] 为 null 时不追加。 */
 @Composable
 private fun SubCategoryGrid(
     categories: List<Category>,
     selectedId: Long?,
     onSelect: (Long) -> Unit,
-    onManageCategory: () -> Unit,
-    allowAddCategory: Boolean,
+    onManageCategory: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    // 「＋」只在允许时补位：确认卡片的悬浮层里不能跳转，显示出来就是死按钮
-    val slots: List<Category?> = remember(categories, allowAddCategory) {
-        if (allowAddCategory) categories + null else categories
+    val showAddCell = onManageCategory != null
+    val slots: List<Category?> = remember(categories, showAddCell) {
+        if (showAddCell) categories + null else categories
     }
     val rows = remember(slots) { slots.chunked(COLUMNS) }
 
@@ -231,7 +230,10 @@ private fun SubCategoryGrid(
             Row(modifier = Modifier.fillMaxWidth()) {
                 rowItems.forEach { category ->
                     if (category == null) {
-                        AddCell(onClick = onManageCategory, modifier = Modifier.weight(1f))
+                        AddCell(
+                            onClick = { onManageCategory?.invoke() },
+                            modifier = Modifier.weight(1f)
+                        )
                     } else {
                         SubCell(
                             category = category,

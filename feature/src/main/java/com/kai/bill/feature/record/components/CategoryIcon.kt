@@ -36,6 +36,8 @@ private val ICON_KEY_TO_DRAWABLE = mapOf(
     "add" to "ic_add",
     "swap-horizontal" to "ic_swap_horizontal",
     "refresh-circle" to "ic_refresh_circle",
+    "arrow-up" to "ic_arrow_up",
+    "arrow-down" to "ic_arrow_down",
 
     // ---- 二级分类图标 ----
     "wine" to "ic_wine",
@@ -85,8 +87,6 @@ private val ICON_KEY_TO_DRAWABLE = mapOf(
     "create" to "ic_create",
     "receipt" to "ic_receipt",
     "arrow-undo" to "ic_arrow_undo",
-    "arrow-down" to "ic_arrow_down",
-    "arrow-up" to "ic_arrow_up",
 )
 
 /** getIdentifier 较慢，按 drawable 名缓存，避免分类网格首帧反复查资源。 */

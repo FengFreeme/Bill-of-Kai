@@ -1,7 +1,26 @@
+<!--
+  向上箭头（Ionicons arrow-up 的等价画法）。
+
+  用途：「转出」分类图标 —— 表示钱离开当前账户。
+  为什么单独建资源而不是复用现有图标：转账子类型要一眼分得出方向，
+  复用「swap-horizontal（转账）」或「arrow-undo（退款）」都会让人误读。
+  描边风格与其它自托管 Ionicons 保持一致（512 视口 / 32 描边 / 圆头圆角）。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="512"
     android:viewportHeight="512">
-    <path android:fillColor="#FF000000" android:pathData="M256 48a16 16 0 0111.31 4.69l136 136a16 16 0 01-22.62 22.62L272 102.63V448a16 16 0 01-32 0V102.63L131.31 211.31a16 16 0 01-22.62-22.62l136-136A16 16 0 01256 48z" />
+    <path
+        android:pathData="M256,432 L256,160"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M176,240 L256,160 L336,240"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

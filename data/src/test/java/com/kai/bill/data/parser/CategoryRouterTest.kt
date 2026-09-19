@@ -1,9 +1,14 @@
 package com.kai.bill.data.parser
 
+import com.kai.bill.data.presets.DefaultCategories
+import com.kai.bill.data.presets.DefaultCategoryKeywords
 import com.kai.bill.data.presets.DefaultMatchKeywords
 import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.SourceType
+import com.kai.bill.domain.model.toCategoryTree
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -27,26 +32,6 @@ class CategoryRouterTest {
     @Test
     fun `品牌词-星巴克-映射到咖啡奶茶`() {
         assertEquals(24L, categoryId("在星巴克点了杯拿铁 ¥35", BillType.EXPENSE))
-    }
-
-    // —— 转账：转入(96) / 转出(97)，挂在 19 转账 之下 ——
-
-    @Test
-    fun `微信-对方已收款-落转出`() {
-        // 「周建鑫已收款」= 我转出去、对方收到了 → 转出(97)。
-        // 之前方向被判成收入，分类一路落到 18 其他收入（真机复现）。
-        val text = "更多信息 周建鑫已收款¥200.00 账单详情 周建鑫已收款 ¥200.00 " +
-            "转账时间 2026年09月10日 22:22:08 收款时间 2026年09月10日 22:22:44"
-        assertEquals(97L, categoryId(text, BillType.TRANSFER))
-    }
-
-    @Test
-    fun `微信-你已收款存零钱-落转入`() {
-        // 收款方视角：钱进来了 → 转入(96)。
-        // 「资金已存入零钱」比「已收款」长，同级比长度时优先生效
-        val text = "你已收款，资金已存入零钱¥100.00 账单详情 你已收款，资金已存入零钱 ¥100.00 " +
-            "零钱余额 转账时间 2026年09月10日 17:24:47 收款时间 2026年09月10日 17:24:55"
-        assertEquals(96L, categoryId(text, BillType.TRANSFER))
     }
 
     @Test
@@ -129,5 +114,55 @@ class CategoryRouterTest {
         assertEquals(setOf(12L, 18L, 20L), router.fallbackIds)
         assertEquals(true, router.isFallback(12L))
         assertEquals(false, router.isFallback(24L))
+    }
+
+    // —— 转账子类型：转出 / 转入（方向层已判为转账，这里只决定落到哪个子类型）——
+
+    @Test
+    fun `某某已收款-映射到转出`() {
+        // 付款方视角：对方收到了我的转账 → 转出
+        assertEquals(
+            96L,
+            categoryId("周建鑫已收款 ¥200.00 转账时间 2026年09月10日 22:22:08", BillType.TRANSFER)
+        )
+    }
+
+    @Test
+    fun `你已收款-映射到转入`() {
+        assertEquals(97L, categoryId("你已收款，资金已存入零钱 ¥100.00", BillType.TRANSFER))
+    }
+
+    @Test
+    fun `转出成功-映射到转出而非泛化转账`() {
+        assertEquals(96L, categoryId("转出成功 ¥0.80 到账账户 支付宝余额", BillType.TRANSFER))
+    }
+
+    @Test
+    fun `只认出是转账-落泛化转账`() {
+        // 判不出方向时不能猜「转出 / 转入」，落 19 泛化项
+        assertEquals(19L, categoryId("支付宝 转账 ¥1,234.56", BillType.TRANSFER))
+    }
+
+    @Test
+    fun `转入转出是转账的二级分类`() {
+        // 「转出 / 转入」只是转账的两个方向，必须挂在「19 转账」下；
+        // 做成并列的一级会让「转账」从一个概念变成三个，统计与筛选都会多出伪维度。
+        val node = DefaultCategories.all.toCategoryTree().firstOrNull { it.parent.id == 19L }
+
+        assertNotNull("19 转账 必须存在于预置分类里", node)
+        assertEquals(listOf(96L, 97L), node!!.children.map { it.id })
+    }
+
+    @Test
+    fun `所有分类词引用的分类 id 必须真实存在`() {
+        // 写错一个 id 会让账单落进语义不符的分类，且不报错、只会在统计里慢慢显形。
+        // 新增「转出(96) / 转入(97)」时这条断言是唯一能挡住手滑的防线。
+        val validIds = DefaultCategories.all.map { it.id }.toSet()
+        DefaultCategoryKeywords.all.forEach { keyword ->
+            assertTrue(
+                "分类词「${keyword.keyword}」引用了不存在的分类 id=${keyword.categoryId}",
+                keyword.categoryId in validIds
+            )
+        }
     }
 }

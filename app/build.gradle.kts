@@ -80,7 +80,7 @@ android {
     buildFeatures {
         compose = true
         // 更新公告要按「当前装的是哪个版本」决定弹不弹：BuildConfig.VERSION_NAME 是编译期常量，
-        // 直接可用；否则得在每次启动时去 PackageManager 查一次，还要处理查询失败的兜底
+        // 直接可用；否则每次启动都得去 PackageManager 查一次，还要处理查询失败的兜底
         buildConfig = true
     }
 

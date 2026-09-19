@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kai.bill.core.common.device.Rom
 import com.kai.bill.core.common.device.RomDetector
+import com.kai.bill.core.common.overlay.CaptureHint
+import com.kai.bill.core.common.overlay.CaptureHintKind
+import com.kai.bill.core.common.overlay.CaptureHintOverlay
 import com.kai.bill.core.common.overlay.ReviewCardOverlay
 import com.kai.bill.core.common.ext.isAccessibilityServiceEnabled
 import com.kai.bill.core.common.ext.isIgnoringBatteryOptimizations
@@ -36,7 +39,8 @@ import javax.inject.Inject
 class PermissionViewModel @Inject constructor(
     application: Application,
     private val kaiPrefs: KaiPrefs,
-    private val reviewCardOverlay: ReviewCardOverlay
+    private val reviewCardOverlay: ReviewCardOverlay,
+    private val captureHintOverlay: CaptureHintOverlay
 ) : AndroidViewModel(application) {
 
     /** 采集链路状态（连接态 / 最近成功时间 / 主开关），供页面展示与开关绑定。 */
@@ -100,6 +104,34 @@ class PermissionViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 测试提示条：直接弹一条「此账单已记录，无需重复记录」。
+     *
+     * 与 [testCard] 同一套理由 —— 提示条与卡片同走 `WindowManager` 那条**会静默失败**
+     * 的路径，没有不花钱的验证入口就只能靠真去买一笔来试。
+     *
+     * 先撤掉可能挂着的确认卡片：提示条按优先级会让位给卡片（避免顶掉用户正在操作的内容），
+     * 而测试入口必须每次都看得见结果，所以这里先把卡片清掉。
+     */
+    fun testHint() {
+        viewModelScope.launch {
+            runCatching { captureHintOverlay.dismiss() }
+            val shown = runCatching {
+                captureHintOverlay.show(CaptureHint(CaptureHintKind.ALREADY_RECORDED))
+            }.getOrDefault(false)
+            _uiState.update {
+                it.copy(
+                    hintTestHint = if (shown) {
+                        "提示条已显示（屏幕底部）。没看到？请确认无障碍服务处于「正常识别中」。"
+                    } else {
+                        // 真正的原因由宿主写进「提示条投递结果」，这里只负责指过去
+                        "没能显示，原因见下方「提示条投递结果」。"
+                    }
+                )
+            }
+        }
+    }
+
     /** 切换自动采集开关，仅写入 prefs；前台服务的启停由 data 层 CaptureController 监听此值完成。 */
     fun setCaptureEnabled(enabled: Boolean) {
         viewModelScope.launch { kaiPrefs.setCaptureEnabled(enabled) }
@@ -133,6 +165,7 @@ class PermissionViewModel @Inject constructor(
  * @property batteryOptimized true 表示仍被电池优化限制（需引导关闭）
  * @property steps 当前 ROM 下的引导步骤列表
  * @property cardTestHint 「测试确认卡片」的结果提示；空串表示还没点过
+ * @property hintTestHint 「测试提示条」的结果提示；空串表示还没点过
  */
 data class PermissionUiState(
     val rom: Rom,
@@ -140,5 +173,6 @@ data class PermissionUiState(
     val accessibilityGranted: Boolean,
     val batteryOptimized: Boolean,
     val steps: List<GuideStep>,
-    val cardTestHint: String = ""
+    val cardTestHint: String = "",
+    val hintTestHint: String = ""
 )

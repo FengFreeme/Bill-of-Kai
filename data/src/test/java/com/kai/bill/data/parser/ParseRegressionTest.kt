@@ -5,7 +5,6 @@ import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.PendingReason
 import com.kai.bill.domain.model.SourceType
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -18,10 +17,12 @@ import org.junit.Test
  * 「金额 + 走向（方向 / 待确认原因 / 排除）」：规则从整包正则换成词表后，这些样本
  * 必须仍然落到同一笔账上 —— 这就是「旧规则退休不等于放弃覆盖」的那道基线。
  *
- * 两处刻意保留的行为差异（都是本次重构的目标，不是回归）：
+ * 三处刻意保留的行为差异（都是本次重构的目标，不是回归）：
  * - `支付宝 转账 ¥1,234.56` 现在归**转账**（不计统计），旧实现记成支出；
  * - `您尾号…入账人民币100.00元` 现在进**待确认**（无法区分真实收入与账户互转），
- *   旧实现按「银行通用入账」直接记成支出。
+ *   旧实现按「银行通用入账」直接记成支出；
+ * - `你收到一笔转账` 现在归**转账·转入**（不计统计），旧实现记成收入 ——
+ *   个人转账不是收入，见下方 `微信-收到一笔转账-判转账且不计统计`。
  */
 class ParseRegressionTest {
 
@@ -126,34 +127,16 @@ class ParseRegressionTest {
     }
 
     @Test
-    fun `微信-对方已收款-归转账且不计统计`() {
-        // 「周建鑫已收款」= 我付出去的钱、对方已经收到。既不是收入，也不计入收支统计。
-        // 旧行为：命中「收款」→ 收入，凭空多算一笔收入（真机复现，账单被记成「其他收入」）
-        val text = "更多信息 周建鑫已收款¥200.00 账单详情 周建鑫已收款 ¥200.00 " +
-            "转账时间 2026年09月10日 22:22:08 收款时间 2026年09月10日 22:22:44"
-        assertEquals(20000L, amountGate.extract(text))
-        val hit = route(text)
-        assertEquals(MatchRoute.TRANSFER, hit.route)
-        assertEquals("已收款", hit.matchedKeyword)
-        assertFalse(hit.countInStats)
-    }
-
-    @Test
-    fun `微信-你已收款存零钱-归转账且不计统计`() {
-        // 收款方视角的同一页：钱进来了，但它是朋友的转账，不是「赚到的钱」
-        val text = "你已收款，资金已存入零钱¥100.00 账单详情 你已收款，资金已存入零钱 ¥100.00 " +
-            "零钱余额 转账时间 2026年09月10日 17:24:47 收款时间 2026年09月10日 17:24:55"
-        assertEquals(10000L, amountGate.extract(text))
-        val hit = route(text)
-        assertEquals(MatchRoute.TRANSFER, hit.route)
-        assertFalse(hit.countInStats)
-    }
-
-    @Test
-    fun `微信-收到一笔转账`() {
+    fun `微信-收到一笔转账-判转账且不计统计`() {
+        // ⚠️ 行为变更（2026-09-20）：旧实现判为**收入**并计入统计。
+        // 个人转账不是收入 —— 与「转账 / 还款」同一口径：直接落库、不计统计，
+        // 分类落到「转入(97)」。用户确实想算收入，在编辑页打开「计入统计」即可。
         val text = "微信 你收到一笔转账 ¥88.00"
         assertEquals(8800L, amountGate.extract(text))
-        assertEquals(MatchRoute.INCOME, route(text).route)
+        val hit = route(text)
+        assertEquals(MatchRoute.TRANSFER, hit.route)
+        assertEquals(BillType.TRANSFER, hit.type)
+        assertTrue(!hit.countInStats)
     }
 
     // —— 银行 ——

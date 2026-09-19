@@ -1,6 +1,9 @@
 package com.kai.bill.data.capture.signal
 
-import com.kai.bill.core.common.overlay.CaptureToast
+import com.kai.bill.core.common.overlay.CaptureHint
+import com.kai.bill.core.common.overlay.CaptureHintKind
+import com.kai.bill.core.common.overlay.CaptureHintOverlay
+import com.kai.bill.core.common.overlay.ReviewCardReason
 import com.kai.bill.core.prefs.KaiPrefs
 import com.kai.bill.data.ingest.ReconcileOutcome
 import com.kai.bill.data.ingest.ReconcileResult
@@ -34,7 +37,7 @@ class CategorySignalRecorder @Inject constructor(
     private val store: CategorySignalStore,
     private val reconciler: SignalReconciler,
     private val reviewNotifier: BillReviewNotifier,
-    private val toast: CaptureToast,
+    private val hintOverlay: CaptureHintOverlay,
     private val kaiPrefs: KaiPrefs,
     private val billRepository: BillRepository,
     private val categoryRepository: CategoryRepository,
@@ -59,7 +62,7 @@ class CategorySignalRecorder @Inject constructor(
         scope.launch { reconcileAndRecord(signal) }
     }
 
-    /** 决策 → 落诊断 → （确实记上了才）弹确认卡片 */
+    /** 决策 → 落诊断 → 弹反馈（确认卡片 / 提示条） */
     private suspend fun reconcileAndRecord(signal: CategorySignal) {
         val result = runCatching { reconciler.reconcile(signal) }
             .getOrElse { ReconcileResult(ReconcileOutcome.FAILED, null) }
@@ -73,35 +76,45 @@ class CategorySignalRecorder @Inject constructor(
             )
         }
 
-        // 卡片负责「有事要你决定」：凭空补记了一笔，或补全了分类。
-        // 反过来，放弃 / 重复 / 抽不到金额时弹一张空卡片只会打扰用户，所以不弹。
-        val reviewBillId = result.reviewBillId
-        val reviewKind = result.reviewKind
-        if (reviewBillId != null && reviewKind != null) {
-            runCatching { reviewNotifier.notifyForReview(reviewBillId, reviewKind) }
+        // 反馈一：确认卡片。只有「确实记上了」才有可改可撤的内容；
+        // 放弃 / 重复 / 抽不到金额时弹一张空卡片只会打扰用户。
+        // 来由必须一起传下去：卡片要说清「刚记了一笔」还是「只补了分类」。
+        result.reviewBillId?.let { billId ->
+            runCatching { reviewNotifier.notifyForReview(billId, result.cardReason()) }
         }
 
-        // 轻提示负责「告诉你结果」—— 尤其是**已有账单、什么都没做**那种情况：
-        // 以前屏幕上完全没动静，用户会怀疑到底识别到没有，于是反复打开同一个页面
-        // （真机反馈就是这么来的）。这里刻意不提示 NO_AMOUNT / NO_MATCH：
-        // 它们表示「这一屏不是账单 / 定不出分类」，是压倒性的高频结果，提示等于每翻一页弹一次。
-        result.feedbackMessage()?.let { message ->
-            runCatching { toast.show(message) }
+        // 反馈二：提示条。只补「本来完全没有反馈」的结果（见 [CaptureHintOverlay] 的分工表）——
+        // 没有它，用户点开一个早就记过的账单详情页时会以为自动记账根本没生效。
+        hintFor(result, signal)?.let { hint ->
+            runCatching { hintOverlay.show(hint) }
         }
     }
+
+    /** 卡片要解释的来由：补分类与新建是两件事，文案不能共用 */
+    private fun ReconcileResult.cardReason(): ReviewCardReason =
+        if (outcome == ReconcileOutcome.ENRICHED) {
+            ReviewCardReason.ENRICHED
+        } else {
+            ReviewCardReason.CREATED
+        }
 
     /**
-     * 需要「轻提示」告知的结果文案；不需要提示时返回 null。
+     * 这次结果要不要给一条屏幕提示；不需要时返回 null。
      *
-     * 只收「用户确实在看某个账单页、而我们也有结论」的几种结果 ——
-     * 依据是决策结果而不是页面内容，所以随手划过的普通页面不会发声。
+     * 只收两种「用户当下看不到任何变化」的结果：
+     * - [ReconcileOutcome.DUPLICATE]：页面早就记过了 —— 最高频的形态，用户点开账单详情就会遇到；
+     * - [ReconcileOutcome.PENDING]：进了待确认列表，页面上什么都没发生。
+     *
+     * 其余一律不提示，尤其是 [ReconcileOutcome.NO_AMOUNT]（绝大多数页面都不是账单）
+     * 与 [ReconcileOutcome.EXCLUDED]（失败 / 营销 / 预告），提示它们等于刷屏。
      */
-    private fun ReconcileResult.feedbackMessage(): String? = when (outcome) {
-        ReconcileOutcome.DUPLICATE -> "此账单已记录，无需重复记录"
-        ReconcileOutcome.AMBIGUOUS -> "附近有多笔相似账单，未自动处理"
-        ReconcileOutcome.FAILED -> "这次识别没处理成功，可在引导页看详情"
-        else -> null
-    }
+    private fun hintFor(result: ReconcileResult, signal: CategorySignal): CaptureHint? =
+        when (result.outcome) {
+            ReconcileOutcome.DUPLICATE -> CaptureHint(CaptureHintKind.ALREADY_RECORDED)
+            ReconcileOutcome.PENDING ->
+                CaptureHint(CaptureHintKind.NEEDS_REVIEW, signal.amountCents)
+            else -> null
+        }
 
     /**
      * 给诊断文本加一段「结论摘要」前缀。
