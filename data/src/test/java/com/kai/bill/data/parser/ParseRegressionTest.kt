@@ -1,131 +1,205 @@
 package com.kai.bill.data.parser
 
-import com.kai.bill.data.presets.DefaultParseRules
+import com.kai.bill.data.presets.DefaultMatchKeywords
+import com.kai.bill.domain.model.BillType
+import com.kai.bill.domain.model.PendingReason
 import com.kai.bill.domain.model.SourceType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * 通知解析回归测试（纯 JVM，可在 CI / 本地直接运行，无需真机）。
  *
- * 覆盖 M4 的支付宝 / 微信预置规则在不同真机通知文本形态下的命中与金额归一化，
- * 作为「多机型真机回归」的代码层基线：规则改版 / regex 调整后用本测试守住不回退。
+ * 用例全部沿用 M4 阶段的真机通知样本，断言从「旧规则的命中 + 金额」改写为新链路的
+ * 「金额 + 走向（方向 / 待确认原因 / 排除）」：规则从整包正则换成词表后，这些样本
+ * 必须仍然落到同一笔账上 —— 这就是「旧规则退休不等于放弃覆盖」的那道基线。
+ *
+ * 两处刻意保留的行为差异（都是本次重构的目标，不是回归）：
+ * - `支付宝 转账 ¥1,234.56` 现在归**转账**（不计统计），旧实现记成支出；
+ * - `您尾号…入账人民币100.00元` 现在进**待确认**（无法区分真实收入与账户互转），
+ *   旧实现按「银行通用入账」直接记成支出。
  */
 class ParseRegressionTest {
 
-    private val rules = DefaultParseRules.all
-    private val ruleEngine = RuleEngine()
-    private val fieldExtractor = FieldExtractor()
+    private val amountGate = AmountGate()
+    private val directionRouter = DirectionRouter()
+    private val tables = DefaultMatchKeywords.tables
 
-    /** 模拟 BillIngestor 的解析链路：match → extract → 归一化，返回金额（分）。 */
-    private fun parseAmount(text: String): Long? {
-        val rule = ruleEngine.match(text, SourceType.NOTIFICATION, rules) ?: return null
-        return AmountNormalizer.toCents(fieldExtractor.extract(text, rule).amountText)
-    }
+    private fun route(text: String) = directionRouter.route(text, SourceType.NOTIFICATION, tables)
+
+    // —— 支付宝 ——
 
     @Test
     fun `支付宝-带元字能命中并归一化`() {
-        assertEquals(8850L, parseAmount("支付宝 账单提醒 支出 ¥88.50 元"))
+        val text = "支付宝 账单提醒 支出 ¥88.50 元"
+        assertEquals(8850L, amountGate.extract(text))
+        assertEquals(MatchRoute.EXPENSE, route(text).route)
     }
 
     @Test
     fun `支付宝-无元字也能命中（真机扫码到账样本）`() {
-        // 真机样本多为「¥12.00」无「元」，原规则强制「元」会落 PARSE_FAILED，已放宽
-        assertEquals(1200L, parseAmount("支付宝 收款 ¥12.00"))
+        val text = "支付宝 收款 ¥12.00"
+        assertEquals(1200L, amountGate.extract(text))
+        assertEquals(MatchRoute.INCOME, route(text).route)
     }
 
     @Test
     fun `支付宝-千分位金额`() {
-        assertEquals(123456L, parseAmount("支付宝 转账 ¥1,234.56"))
+        assertEquals(123456L, amountGate.extract("支付宝 转账 ¥1,234.56"))
+    }
+
+    @Test
+    fun `支付宝-转账归转账且不计统计`() {
+        // 「转账」只在分类词表里（分类 19 转账），方向由分类词兜底得出
+        val hit = route("支付宝 转账 ¥1,234.56")
+        assertEquals(MatchRoute.TRANSFER, hit.route)
+        assertEquals(BillType.TRANSFER, hit.type)
+        assertTrue(!hit.countInStats)
     }
 
     @Test
     fun `支付宝-交易提醒-支出通知无支付宝关键字`() {
-        // 截图新样本：文本中无「支付宝」，通用支付宝规则无法命中
-        assertEquals(50L, parseAmount("交易提醒 你有一笔0.50元的支出，点此查看详情。"))
+        // 通知正文里没有「支付宝」三字，旧实现必须靠独立规则覆盖
+        val text = "交易提醒 你有一笔0.50元的支出，点此查看详情。"
+        assertEquals(50L, amountGate.extract(text))
+        assertEquals(MatchRoute.EXPENSE, route(text).route)
     }
 
     @Test
     fun `支付宝-收款到账`() {
-        assertEquals(50L, parseAmount("收款到账 ￥0.50 已存入余额"))
+        val text = "收款到账 ￥0.50 已存入余额"
+        assertEquals(50L, amountGate.extract(text))
+        // 「收款到账」必须压过泛化的「到账 / 存入」，否则会掉进待确认
+        assertEquals(MatchRoute.INCOME, route(text).route)
     }
 
     @Test
     fun `支付宝-退款成功`() {
-        assertEquals(1200L, parseAmount("退款成功 ￥12.00 已退回原账户"))
+        val text = "退款成功 ￥12.00 已退回原账户"
+        assertEquals(1200L, amountGate.extract(text))
+        assertEquals(MatchRoute.INCOME, route(text).route)
     }
 
     @Test
     fun `支付宝-收到退款-金额在退款前`() {
-        // 真实样本：「你收到一笔29.8元退款」，金额在「退款」之前，原规则漏抓
-        assertEquals(2980L, parseAmount("你收到一笔29.8元退款"))
+        // 金额在动作词**之前**，所以消歧只能靠距离、不能靠先后
+        val text = "你收到一笔29.8元退款"
+        assertEquals(2980L, amountGate.extract(text))
+        assertEquals(MatchRoute.INCOME, route(text).route)
     }
 
     @Test
     fun `支付宝-余额宝收益`() {
-        assertEquals(321L, parseAmount("余额宝 收益发放 ¥3.21"))
+        val text = "余额宝 收益发放 ¥3.21"
+        assertEquals(321L, amountGate.extract(text))
+        assertEquals(MatchRoute.INCOME, route(text).route)
     }
 
     @Test
-    fun `支付宝-转出成功-金额在支付宝之前`() {
-        // 截图场景对应通知文本：金额在「支付宝余额」之前，通用支付宝规则会漏抓
-        assertEquals(80L, parseAmount("转出成功 ¥0.80 到账账户 支付宝余额"))
+    fun `支付宝-转出成功-进待确认`() {
+        // 自己的钱搬家：方向可能是转账、也可能什么都不是，交人工确认
+        val text = "转出成功 ¥0.80 到账账户 支付宝余额"
+        assertEquals(80L, amountGate.extract(text))
+        val hit = route(text)
+        assertEquals(PendingReason.SELF_TRANSFER, hit.pendingReason)
+        assertTrue(hit.isPending)
     }
+
+    // —— 微信 ——
 
     @Test
     fun `微信支付-能命中`() {
-        assertEquals(1L, parseAmount("微信支付 支付成功 ¥0.01"))
+        val text = "微信支付 支付成功 ¥0.01"
+        assertEquals(1L, amountGate.extract(text))
+        assertEquals(MatchRoute.EXPENSE, route(text).route)
     }
 
     @Test
-    fun `微信红包-能命中`() {
-        assertEquals(520L, parseAmount("微信红包 你领取了XX的红包，金额 ¥5.20"))
+    fun `微信红包-进待确认`() {
+        val text = "微信红包 你领取了XX的红包，金额 ¥5.20"
+        assertEquals(520L, amountGate.extract(text))
+        assertEquals(PendingReason.GIFT, route(text).pendingReason)
+    }
+
+    @Test
+    fun `微信-对方已收款-归转账且不计统计`() {
+        // 「周建鑫已收款」= 我付出去的钱、对方已经收到。既不是收入，也不计入收支统计。
+        // 旧行为：命中「收款」→ 收入，凭空多算一笔收入（真机复现，账单被记成「其他收入」）
+        val text = "更多信息 周建鑫已收款¥200.00 账单详情 周建鑫已收款 ¥200.00 " +
+            "转账时间 2026年09月10日 22:22:08 收款时间 2026年09月10日 22:22:44"
+        assertEquals(20000L, amountGate.extract(text))
+        val hit = route(text)
+        assertEquals(MatchRoute.TRANSFER, hit.route)
+        assertEquals("已收款", hit.matchedKeyword)
+        assertFalse(hit.countInStats)
+    }
+
+    @Test
+    fun `微信-你已收款存零钱-归转账且不计统计`() {
+        // 收款方视角的同一页：钱进来了，但它是朋友的转账，不是「赚到的钱」
+        val text = "你已收款，资金已存入零钱¥100.00 账单详情 你已收款，资金已存入零钱 ¥100.00 " +
+            "零钱余额 转账时间 2026年09月10日 17:24:47 收款时间 2026年09月10日 17:24:55"
+        assertEquals(10000L, amountGate.extract(text))
+        val hit = route(text)
+        assertEquals(MatchRoute.TRANSFER, hit.route)
+        assertFalse(hit.countInStats)
     }
 
     @Test
     fun `微信-收到一笔转账`() {
-        assertEquals(8800L, parseAmount("微信 你收到一笔转账 ¥88.00"))
+        val text = "微信 你收到一笔转账 ¥88.00"
+        assertEquals(8800L, amountGate.extract(text))
+        assertEquals(MatchRoute.INCOME, route(text).route)
     }
+
+    // —— 银行 ——
 
     @Test
     fun `招商银行-快捷支付扣款`() {
-        // 通知中心原文：「您账户2836于09月13日22:49在【财付通-微信支付-微信转账】发生快捷支付扣款，人民币0.10元」
-        assertEquals(10L, parseAmount("您账户2836于09月13日22:49在【财付通-微信支付-微信转账】发生快捷支付扣款，人民币0.10元"))
+        val text = "您账户2836于09月13日22:49在【财付通-微信支付-微信转账】发生快捷支付扣款，人民币0.10元"
+        assertEquals(10L, amountGate.extract(text))
+        assertEquals(MatchRoute.EXPENSE, route(text).route)
     }
 
     @Test
     fun `银行-您账户-消费支出`() {
-        // 工行等常见格式：「您账户****1234于09月13日发生消费支出人民币88.50元」
-        assertEquals(8850L, parseAmount("您账户****1234于09月13日发生消费支出人民币88.50元"))
+        val text = "您账户****1234于09月13日发生消费支出人民币88.50元"
+        assertEquals(8850L, amountGate.extract(text))
+        assertEquals(MatchRoute.EXPENSE, route(text).route)
     }
 
     @Test
-    fun `银行-您尾号-消费`() {
-        // 建行等常见格式：「您尾号1234的储蓄卡9月13日POS消费支出人民币88.50元」
-        assertEquals(8850L, parseAmount("您尾号1234的储蓄卡9月13日POS消费支出人民币88.50元"))
+    fun `银行-您尾号-POS消费`() {
+        val text = "您尾号1234的储蓄卡9月13日POS消费支出人民币88.50元"
+        assertEquals(8850L, amountGate.extract(text))
+        assertEquals(MatchRoute.EXPENSE, route(text).route)
     }
 
     @Test
-    fun `银行-您尾号-入账`() {
-        // 中行等常见格式：「您尾号5678账户09月13日入账人民币100.00元」
-        assertEquals(10000L, parseAmount("您尾号5678账户09月13日入账人民币100.00元"))
+    fun `银行-您尾号-入账降级为待确认`() {
+        val text = "您尾号5678账户09月13日入账人民币100.00元"
+        assertEquals(10000L, amountGate.extract(text))
+        assertEquals(PendingReason.GENERIC_INBOUND, route(text).pendingReason)
     }
 
     @Test
     fun `银行-通知无金额-不误读卡号尾号2836`() {
-        // 招行真实通知栏文本（金额只在 App 详情页，不在通知里）：
-        // 「您账户2836于09月13日22:49在【财付通-微信支付-微信转账】发生快捷支付扣款」
-        // 金额正则已收紧，2836 这类纯整数不再被误读为金额，应整体不命中。
-        assertNull(parseAmount("您账户2836于09月13日22:49在【财付通-微信支付-微信转账】发生快捷支付扣款"))
+        // 招行真实通知栏文本（金额只在 App 详情页，不在通知里）
+        val text = "您账户2836于09月13日22:49在【财付通-微信支付-微信转账】发生快捷支付扣款"
+        assertNull(amountGate.extract(text))
     }
 
     @Test
     fun `无关通知不命中`() {
-        assertNull(parseAmount("微信 收到一条消息：在吗"))
-        assertNull(parseAmount("今日天气晴"))
+        assertNull(amountGate.extract("微信 收到一条消息：在吗"))
+        assertNull(amountGate.extract("今日天气晴"))
     }
+
+    // —— 金额归一化 / 去重键（原样保留）——
 
     @Test
     fun `AmountNormalizer-各种金额形态`() {
@@ -138,11 +212,63 @@ class ParseRegressionTest {
     }
 
     @Test
-    fun `DedupKey-相同输入稳定-不同金额不同`() {
-        val a = DedupKey.build(1200, 1_700_000_000_000L, null)
-        val b = DedupKey.build(1200, 1_700_000_000_000L, null)
-        val c = DedupKey.build(1300, 1_700_000_000_000L, null)
+    fun `DedupKey-同额同类型同秒-键稳定且不同金额不同`() {
+        val a = DedupKey.build(1200, ALIGNED_T, BillType.EXPENSE, null)
+        val b = DedupKey.build(1200, ALIGNED_T, BillType.EXPENSE, null)
+        val c = DedupKey.build(1300, ALIGNED_T, BillType.EXPENSE, null)
         assertEquals(a, b)
         assertNotEquals(a, c)
+    }
+
+    @Test
+    fun `DedupKey-类型参与身份-同秒同额的支出与收入不互相顶掉`() {
+        // 类型进了键，所以「支出 ¥10」与「收入 ¥10」落在同一时刻也各记一笔
+        assertNotEquals(
+            DedupKey.build(1000, ALIGNED_T, BillType.EXPENSE, null),
+            DedupKey.build(1000, ALIGNED_T, BillType.INCOME, null)
+        )
+    }
+
+    @Test
+    fun `DedupKey-同额同类型但间隔超过1秒-各记一笔`() {
+        // 两笔 ¥10 相隔 30 秒：键必须不同，否则第二笔会被静默丢掉
+        assertNotEquals(
+            DedupKey.build(1000, ALIGNED_T, BillType.EXPENSE, null),
+            DedupKey.build(1000, ALIGNED_T + 30_000L, BillType.EXPENSE, null)
+        )
+    }
+
+    @Test
+    fun `DedupKey-一秒内的重复投递合并（不看原文）`() {
+        // 同一笔被投递两次、postTime 抖了 400ms → 同一秒桶 → 判为同一笔。
+        // 原文写什么都不影响：文案微变不再多记一笔（这正是去掉原文指纹的目的）。
+        //
+        // 已知代价：同一秒内两笔「金额 / 类型 / 商户」全同的真实消费与此完全同形，
+        // 也会被判成同一笔 —— 两者在数据上无法区分，见 DedupKey 的取舍说明。
+        assertEquals(
+            DedupKey.build(1000, ALIGNED_T, BillType.EXPENSE, null),
+            DedupKey.build(1000, ALIGNED_T + 400L, BillType.EXPENSE, null)
+        )
+    }
+
+    @Test
+    fun `DedupKey-跨出秒桶边界就不再合并-已知取舍`() {
+        // 刻意的行为：超过桶宽一律视为两笔。真机上若发现「同一笔被延迟几秒重发」多记，
+        // 调 DedupKey_TIME_BUCKET_MILLIS，而不是回退到看原文
+        assertNotEquals(
+            DedupKey.build(1000, ALIGNED_T, BillType.EXPENSE, null),
+            DedupKey.build(1000, ALIGNED_T + DedupKey.TIME_BUCKET_MILLIS, BillType.EXPENSE, null)
+        )
+    }
+
+    private companion object {
+
+        /**
+         * 对齐到整秒的时间戳。
+         *
+         * 去重键按秒分桶，用例必须落在**同一个秒桶**内，「±400ms 仍算同一笔」这类断言才成立；
+         * 随便取一个毫秒值很可能刚好跨界，让测试变得看运气。
+         */
+        val ALIGNED_T: Long = 1_700_000_000_000L / 1_000L * 1_000L
     }
 }

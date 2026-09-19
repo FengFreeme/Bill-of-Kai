@@ -25,3 +25,15 @@ data class BillFilter(
     val includeUnspecifiedAccount: Boolean = false,
     val countInStats: Boolean? = null
 )
+
+/**
+ * 换算成「该筛选自身维度下真正生效」的条件。
+ *
+ * 转账维度要放开 [BillFilter.countInStats]：那个开关对转账本就是空操作
+ * （[Bill.isCounted] 已把转账排除在收支之外），但筛选面板默认会带上 `countInStats = true`，
+ * 于是转账会被顺手挡在明细查询之外，转账维度一片空。
+ *
+ * 支出 / 收入维度原样返回 —— 它们的口径就是「只统计计入统计的流水」。
+ */
+fun BillFilter.effectiveForDimension(): BillFilter =
+    if (type == BillType.TRANSFER) copy(countInStats = null) else this

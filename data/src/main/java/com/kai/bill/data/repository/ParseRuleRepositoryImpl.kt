@@ -1,8 +1,8 @@
 package com.kai.bill.data.repository
 
 import com.kai.bill.core.db.dao.ParseRuleDao
-import com.kai.bill.core.db.entity.SourceType as EntitySourceType
 import com.kai.bill.data.mapper.ParseRuleMapper
+import com.kai.bill.data.mapper.toEntity
 import com.kai.bill.domain.model.ParseRule
 import com.kai.bill.domain.model.SourceType
 import com.kai.bill.domain.repository.ParseRuleRepository
@@ -26,7 +26,7 @@ class ParseRuleRepositoryImpl @Inject constructor(
         dao.observeEnabled().map { it.map(ParseRuleMapper::toDomain) }
 
     override fun observeEnabledBySource(source: SourceType): Flow<List<ParseRule>> =
-        dao.observeEnabledBySource(toEntity(source)).map { it.map(ParseRuleMapper::toDomain) }
+        dao.observeEnabledBySource(source.toEntity()).map { it.map(ParseRuleMapper::toDomain) }
 
     override suspend fun upsert(rule: ParseRule) =
         dao.upsert(ParseRuleMapper.toEntity(rule))
@@ -35,10 +35,4 @@ class ParseRuleRepositoryImpl @Inject constructor(
         dao.upsertAll(rules.map(ParseRuleMapper::toEntity))
 
     override suspend fun deleteById(id: Long) = dao.deleteById(id)
-
-    private fun toEntity(source: SourceType): EntitySourceType = when (source) {
-        SourceType.NOTIFICATION -> EntitySourceType.NOTIFICATION
-        SourceType.SMS -> EntitySourceType.SMS
-        SourceType.MANUAL -> EntitySourceType.MANUAL
-    }
 }

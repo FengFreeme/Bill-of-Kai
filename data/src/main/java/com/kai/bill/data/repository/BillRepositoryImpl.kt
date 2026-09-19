@@ -5,7 +5,10 @@ import com.kai.bill.data.mapper.BillMapper
 import com.kai.bill.data.mapper.toEntity
 import com.kai.bill.domain.model.Bill
 import com.kai.bill.domain.model.BillFilter
+import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.DateRange
+import com.kai.bill.domain.model.SourceType
+import com.kai.bill.domain.model.effectiveForDimension
 import com.kai.bill.domain.repository.BillRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -16,7 +19,7 @@ import javax.inject.Singleton
  * [BillRepository] 的 Room 实现。
  *
  * 注入 [BillDao]，通过 [BillMapper] 完成 Entity ⇄ Domain 转换；
- * 自身不持有任何业务逻辑，纯转发 + 映射。
+ * 自身不持有任何业务逻辑，纯转发 + 映射（唯一的加工是 [effectiveForDimension] 的口径修正）。
  */
 @Singleton
 class BillRepositoryImpl @Inject constructor(
@@ -33,7 +36,8 @@ class BillRepositoryImpl @Inject constructor(
             // 为「任意个数的 IN 查询」写动态 SQL 带来的复杂度与风险。
             categoryId = filter?.categoryIds?.singleOrNull(),
             accountId = filter?.accountIds?.singleOrNull(),
-            countInStats = filter?.countInStats
+            // 转账维度要放开 countInStats，否则转账会被整批挡在明细之外
+            countInStats = filter?.effectiveForDimension()?.countInStats
         ).map { entities ->
             if (filter == null) {
                 entities.map(BillMapper::toDomain)
@@ -89,5 +93,43 @@ class BillRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun existsInWindow(
+        amountCents: Long,
+        type: BillType,
+        timeMillis: Long,
+        windowMillis: Long
+    ): Boolean = billDao.existsInWindow(
+        amountCents = amountCents,
+        type = type.toEntity(),
+        startMillis = timeMillis - windowMillis,
+        endMillis = timeMillis + windowMillis
+    )
+
+    override suspend fun findAutoBillsInWindow(
+        startMillis: Long,
+        endMillis: Long
+    ): List<Bill> = billDao.findAutoBillsInWindow(
+        startMillis = startMillis,
+        endMillis = endMillis,
+        sources = AUTO_SOURCES.map(SourceType::toEntity)
+    ).map(BillMapper::toDomain)
+
     override suspend fun deleteById(id: Long) = billDao.deleteById(id)
+
+    private companion object {
+
+        /**
+         * 允许被自动回填 / 建账判定的来源。
+         *
+         * **不含 [SourceType.MANUAL]**：用户手输的分类不该被程序覆盖。
+         * 这条规则落在 SQL 的 `source IN (...)` 上，而不是靠调用方自觉 ——
+         * 少一处「忘记判断」的可能，就少一类「程序改坏用户数据」的事故。
+         */
+        val AUTO_SOURCES = listOf(
+            SourceType.NOTIFICATION,
+            SourceType.SMS,
+            SourceType.ACCESSIBILITY,
+            SourceType.SCREENSHOT
+        )
+    }
 }

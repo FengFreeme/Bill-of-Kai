@@ -12,7 +12,9 @@ package com.kai.bill.domain.model
  * @property id 主键，0 表示尚未落库（新增）
  * @property amountCents 金额，单位「分」，恒为正数
  * @property type 账单类型
- * @property countInStats 是否计入统计与预算；[BillType.TRANSFER] 默认 false
+ * @property countInStats 是否计入统计与预算。**只对支出 / 收入有意义**：转账本就被
+ *           [isCounted] 排除在收支之外，该字段对转账不产生任何影响
+ *           （记一笔页选转账时也不显示这个开关）
  * @property categoryId 分类 ID；[BillType.TRANSFER] 时复用为「还款 / 互转 / 借款」子类型
  * @property accountId 账户 ID，可空（未指定账户）
  * @property merchant 商户名，解析得出

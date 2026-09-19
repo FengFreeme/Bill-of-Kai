@@ -1,11 +1,14 @@
 package com.kai.bill.data.mapper
 
 import com.kai.bill.core.db.entity.ParseRuleEntity
-import com.kai.bill.core.db.entity.SourceType as EntitySourceType
 import com.kai.bill.domain.model.ParseRule
-import com.kai.bill.domain.model.SourceType
 
-/** ParseRule Entity ⇄ Domain */
+/**
+ * ParseRule Entity ⇄ Domain。
+ *
+ * `SourceType` 转换走同包的公共入口（见 `SourceTypeMapping.kt`）——
+ * 本文件原先自带一份私有实现，第三张表（待确认账单）也要用时就会撞成重复定义。
+ */
 object ParseRuleMapper {
 
     fun toDomain(entity: ParseRuleEntity): ParseRule = ParseRule(
@@ -35,16 +38,4 @@ object ParseRuleMapper {
         priority = rule.priority,
         enabled = rule.enabled
     )
-}
-
-private fun EntitySourceType.toDomain(): SourceType = when (this) {
-    EntitySourceType.NOTIFICATION -> SourceType.NOTIFICATION
-    EntitySourceType.SMS -> SourceType.SMS
-    EntitySourceType.MANUAL -> SourceType.MANUAL
-}
-
-private fun SourceType.toEntity(): EntitySourceType = when (this) {
-    SourceType.NOTIFICATION -> EntitySourceType.NOTIFICATION
-    SourceType.SMS -> EntitySourceType.SMS
-    SourceType.MANUAL -> EntitySourceType.MANUAL
 }

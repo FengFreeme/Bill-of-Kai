@@ -21,7 +21,9 @@ import kotlinx.coroutines.flow.Flow
  * 全部返回 [Flow]：Room 会监听 `bill` 表，记一笔账后统计自动刷新，无需手动重试。
  *
  * 聚合口径由 SQL 保证（改动 SQL 时必须保持）：
- * 1. `countInStats = 1` —— 转账、还款、待报销不进统计
+ * 1. `(type = 'TRANSFER' OR countInStats = 1)` —— 支出 / 收入只统计计入统计的流水
+ *    （转账、还款、待报销不进统计）；**转账维度统计全部转账**，因为 `countInStats`
+ *    对转账本就没有意义（见 `Bill.isCounted`）。内存聚合侧的同一口径见 `StatsAggregator`
  * 2. 按 `time`（交易时间）而非 `createdAt` —— 补记场景要按交易时间归月
  * 3. `COALESCE(SUM(...), 0)` —— 无匹配行时 SQLite 的 SUM 返回 NULL
  */

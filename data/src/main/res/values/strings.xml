@@ -2,6 +2,13 @@
 <resources>
     <!-- 系统「通知使用权」列表中展示的服务名 -->
     <string name="notification_listener_label">小凯记账 · 通知读取</string>
+    <!--
+      系统「无障碍」列表中展示的服务名与说明。
+      这是用户授权时唯一的解释渠道，必须说清「做什么」与「不做什么」，
+      否则用户在系统设置页看到一个只有名字的服务是不敢开的。
+    -->
+    <string name="accessibility_service_label">小凯记账 · 分类识别</string>
+    <string name="accessibility_service_description">读取支付页面上的商户信息，为账单自动补全消费分类。文本只在手机本地短时使用，不上传、不落盘，也不会读取聊天内容与密码。</string>
     <!-- 前台保活服务相关 -->
     <string name="capture_channel_name">采集保活</string>
     <string name="capture_channel_desc">保持通知监听在后台运行</string>

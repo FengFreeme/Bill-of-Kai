@@ -13,10 +13,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 自动记账成功后弹系统通知，给用户即时反馈。
+ * 自动记账成功后的通知出口。
  *
- * 仅对 [com.kai.bill.domain.model.CaptureResult.PARSED_AND_SAVED] 触发；
- * 重复跳过 / 解析失败不弹，避免刷屏。
+ * 抽成接口的理由与 `NotificationCaptureBridge` 相同：采集链路（[com.kai.bill.data.ingest.IngestPipeline]）
+ * 需要在**纯 JVM 单测**里断言「这笔落库后有没有发通知」，而不是被迫把 Android Context 搬进测试。
+ */
+interface BillSavedNotifier {
+
+    /**
+     * 仅在 [com.kai.bill.domain.model.CaptureResult.PARSED_AND_SAVED] 时调用。
+     *
+     * @param amountCents 金额（分）
+     * @param type 账单类型（支出 / 收入 / 转账）
+     * @param source 采集来源
+     */
+    fun notifySaved(amountCents: Long, type: BillType, source: SourceType)
+}
+
+/**
+ * 系统通知实现：弹「已记账 ¥88.50 · 支出 · 通知」的悬浮横幅，给用户即时反馈。
+ *
+ * 重复跳过 / 解析失败 / 待确认都不走这里，避免刷屏（待确认有自己的分档通知）。
  *
  * 复用前台服务已声明的 [R.drawable.ic_notification] 小图标，并新建独立通道
  * 「记账结果」（`bill_saved_v2`，[NotificationManager.IMPORTANCE_HIGH] + [NotificationCompat.PRIORITY_HIGH]）
@@ -27,14 +44,15 @@ import javax.inject.Singleton
  * DEFAULT、无法悬浮，必须卸载重装才行。
  */
 @Singleton
-class BillSavedNotifier @Inject constructor(
+class DefaultBillSavedNotifier @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : BillSavedNotifier {
+
     private val mgr by lazy {
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
-    fun notifySaved(amountCents: Long, type: BillType, source: SourceType) {
+    override fun notifySaved(amountCents: Long, type: BillType, source: SourceType) {
         val amount = "¥%.2f".format(amountCents / 100.0)
         val typeText = when (type) {
             BillType.EXPENSE -> "支出"
@@ -45,6 +63,8 @@ class BillSavedNotifier @Inject constructor(
             SourceType.NOTIFICATION -> "通知"
             SourceType.SMS -> "短信"
             SourceType.MANUAL -> "手动"
+            SourceType.ACCESSIBILITY -> "分类识别"
+            SourceType.SCREENSHOT -> "截图识别"
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -72,8 +92,8 @@ class BillSavedNotifier @Inject constructor(
         mgr.notify(NOTIF_ID, notif)
     }
 
-    companion object {
-        private const val CHANNEL_ID = "bill_saved_v2"
-        private const val NOTIF_ID = 2001
+    private companion object {
+        const val CHANNEL_ID = "bill_saved_v2"
+        const val NOTIF_ID = 2001
     }
 }

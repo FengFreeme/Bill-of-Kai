@@ -9,12 +9,14 @@ import com.kai.bill.core.db.dao.BillDao
 import com.kai.bill.core.db.dao.BudgetDao
 import com.kai.bill.core.db.dao.CategoryDao
 import com.kai.bill.core.db.dao.ParseRuleDao
+import com.kai.bill.core.db.dao.PendingBillDao
 import com.kai.bill.core.db.dao.StatsDao
 import com.kai.bill.core.db.entity.AccountEntity
 import com.kai.bill.core.db.entity.BillEntity
 import com.kai.bill.core.db.entity.BudgetEntity
 import com.kai.bill.core.db.entity.CategoryEntity
 import com.kai.bill.core.db.entity.ParseRuleEntity
+import com.kai.bill.core.db.entity.PendingBillEntity
 
 /**
  * 当前数据库版本。
@@ -25,9 +27,12 @@ import com.kai.bill.core.db.entity.ParseRuleEntity
  * 而漏改的后果是 Room 走破坏性重建、用户账目全丢。
  *
  * 升级流程：本值 +1 → 在 `migration/Migrations.kt` 追加一条 Migration →
- * 加进 ALL_MIGRATIONS。
+ * 加进 `ALL_MIGRATIONS` → 在 `app/di/DatabaseModule` 的 `addMigrations(...)` 生效。
+ *
+ * **v1 → v2**：新增待确认表 `pending_bill`（判不准的通知先存下来等用户拍板）。
+ * 纯增量建表，不改任何既有表的列，因此迁移不会触碰用户已有账目。
  */
-private const val DATABASE_VERSION = 1
+private const val DATABASE_VERSION = 2
 
 /**
  * 小凯记账的 Room 数据库 —— **唯一数据源（Single Source of Truth）**。
@@ -43,7 +48,8 @@ private const val DATABASE_VERSION = 1
         CategoryEntity::class,
         AccountEntity::class,
         BudgetEntity::class,
-        ParseRuleEntity::class
+        ParseRuleEntity::class,
+        PendingBillEntity::class
     ],
     version = DATABASE_VERSION,
     exportSchema = true
@@ -62,6 +68,8 @@ abstract class KaiDatabase : RoomDatabase() {
     abstract fun budgetDao(): BudgetDao
 
     abstract fun parseRuleDao(): ParseRuleDao
+
+    abstract fun pendingBillDao(): PendingBillDao
 
     companion object {
 

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  无障碍服务配置。
+
+  四个取舍：
+  1. 只收「窗口状态变化」与「窗口内容变化」两类事件 —— 页面切换与页面刷新才是我们要的时机，
+     点击 / 滚动 / 文本输入既不必要，也会把隐私面放大到不可接受；
+  2. notificationTimeout=100ms 由系统侧节流：一次页面切换常连续触发多次事件，
+     不节流会重复做同一份文本抽取。取 100ms（而非更大的值）是为了让「换页判定」
+     尽快拿到第一批事件 —— 页面是否加载完由服务侧的有界轮询负责，不靠系统这里拖时间；
+  3. 刻意**不设** android:packageNames —— XML 无法引用 Kotlin 常量，写了就等于把白名单
+     复制成第二份，日后必然与代码漂移。改由 AccessibilityWhitelist 在事件回调第一行过滤，
+     非白名单事件在内存里即时丢弃，不持久化、不写日志。
+  4. flagRetrieveInteractiveWindows：让 `service.windows` 返回**所有**可见窗口。
+     没有它这个列表恒为空，就只剩 `rootInActiveWindow`（焦点窗口）。
+     微信同时开好几个窗口（LauncherUI / MMWebViewUI / AppBrand…），包名还都一样，
+     只靠焦点窗口容易读到错的那个。
+  5. flagIncludeNotImportantViews：**默认会把 `importantForAccessibility=false` 的节点整棵剪掉**。
+     真机上微信账单页的「商户名 + 金额」正是被标成不重要而整块丢失的 ——
+     页面总共只有 99 个节点，远低于遍历上限，却始终抽不到金额，
+     而系统 `uiautomator` 能看到（它的服务带这个 flag）。
+     加上它后节点数会变多，故 MAX_NODES 一并上调。
+     两个 flag 都**不扩大可读的 App 范围**：白名单仍然只放行这几个包。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:description="@string/accessibility_service_description" />

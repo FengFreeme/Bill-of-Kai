@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.kai.bill.core.db.entity.BillEntity
 import com.kai.bill.core.db.entity.BillType
+import com.kai.bill.core.db.entity.SourceType
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -103,37 +104,6 @@ interface BillDao {
     suspend fun getById(id: Long): BillEntity?
 
     /**
-     * 时间窗模糊判重（去重的第二道防线）。
-     *
-     * 同一笔消费的通知与短信往往相差几秒到达，金额与归一化商户相同，
-     * 仅靠 `dedupHash` 的分钟级时间可能无法命中，因此再按时间窗捞一次。
-     *
-     * NOTE: `ifnull(merchant, '')` 而非 `merchant = :merchant` ——
-     *       SQLite 中 `NULL = NULL` 判定为假，直接比较会让「无商户」的账单永远查不到重复。
-     *
-     * @param amountCents 金额，单位「分」
-     * @param merchant 归一化后的商户名，可为 null
-     * @param tradeTimeMillis 交易发生时间（毫秒）
-     * @param windowMillis 时间窗长度（毫秒），建议 60_000
-     * @return 命中的重复账单；无重复返回 null
-     */
-    @Query(
-        """
-        SELECT * FROM bill
-        WHERE amountCents = :amountCents
-          AND ifnull(merchant, '') = ifnull(:merchant, '')
-          AND ABS(time - :tradeTimeMillis) <= :windowMillis
-        LIMIT 1
-        """
-    )
-    suspend fun findDuplicate(
-        amountCents: Long,
-        merchant: String?,
-        tradeTimeMillis: Long,
-        windowMillis: Long
-    ): BillEntity?
-
-    /**
      * 插入一条账单。
      *
      * 使用 `IGNORE` 而非 `ABORT`：`dedupHash` 上有唯一索引，重复插入时会静默失败并返回 -1，
@@ -145,10 +115,74 @@ interface BillDao {
     suspend fun insert(bill: BillEntity): Long
 
     /**
+     * 时间窗内是否已存在「金额 + 类型」相同的账单。
+     *
+     * 与 `dedupHash` 唯一索引互补的第二道去重：唯一索引只认「同一秒格」，两条投递跨过秒格边界
+     * （如 `x.999` 与 `(x+1).000`）就会漏网；本查询按实际时间差判断，与秒格对齐无关
+     * （见 `DedupKey.MATCH_WINDOW_MILLIS`）。窄范围走 `time` 索引，窗口只有秒级，开销可忽略。
+     *
+     * @param amountCents 金额（分）
+     * @param type 账单类型
+     * @param startMillis 窗口下界（含）
+     * @param endMillis 窗口上界（含）
+     * @return 命中任意一条即 true
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM bill
+            WHERE amountCents = :amountCents
+              AND type = :type
+              AND time BETWEEN :startMillis AND :endMillis
+        )
+        """
+    )
+    suspend fun existsInWindow(
+        amountCents: Long,
+        type: BillType,
+        startMillis: Long,
+        endMillis: Long
+    ): Boolean
+
+    /**
      * 更新一条账单。以主键匹配，要求调用方传入的实体 id 非 0。
      */
     @Update
     suspend fun update(bill: BillEntity)
+
+    /**
+     * 查时间窗内、来源为自动采集的账单 —— 信号决策的唯一查询入口。
+     *
+     * **刻意不按分类过滤**，因为它要同时回答两个问题，且顺序不能颠倒：
+     * 1. **这笔是不是已经记过了？** —— 窗口内只要有**同金额**的账单就算记过，与它是什么分类无关；
+     * 2. **哪些账单还允许被补分类？** —— 由调用方在内存里筛「分类仍是兜底值」的那些。
+     *
+     * ⚠️ 问题 1 **绝不能退化成「只看兜底分类」** —— 真机已复现这个 bug：
+     * 信号常常比通知早约 0.5s 到达，通知随后落库时 S3 会从信号窗口读到这条信号，
+     * 于是那笔通知账单**一落库就带着正确分类**（不在兜底集合里）。
+     * 若候选查询只认兜底分类，复核就会「看不见」它，误判成「无账可配」而把同一笔记两次。
+     *
+     * - `time BETWEEN` 走 `time` 索引，窗口由调用方保证为分钟级；
+     * - `source IN` 排除手动记账 —— 用户主动输入的分类不该被自动覆盖。
+     *
+     * @param startMillis 窗口下界（含）
+     * @param endMillis 窗口上界（含）
+     * @param sources 允许被自动判定的来源（**不含 MANUAL**）
+     * @return 按交易时间倒序的账单
+     */
+    @Query(
+        """
+        SELECT * FROM bill
+        WHERE time BETWEEN :startMillis AND :endMillis
+          AND source IN (:sources)
+        ORDER BY time DESC
+        """
+    )
+    suspend fun findAutoBillsInWindow(
+        startMillis: Long,
+        endMillis: Long,
+        sources: List<SourceType>
+    ): List<BillEntity>
 
     /**
      * 按主键删除一条账单。

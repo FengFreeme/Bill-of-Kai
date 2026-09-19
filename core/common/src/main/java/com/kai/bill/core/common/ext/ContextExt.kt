@@ -37,12 +37,45 @@ fun Context.hasReadSmsPermission(): Boolean =
  *
  * @return true 表示已授予，通知监听服务才能收到内容
  */
-fun Context.isNotificationListenerEnabled(): Boolean {
-    val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+fun Context.isNotificationListenerEnabled(): Boolean =
+    isAnyServiceEnabledIn(NOTIFICATION_LISTENERS)
+
+/**
+ * 判断本应用的无障碍服务是否已在系统设置中启用。
+ *
+ * 与通知使用权同理：只能检测 + 引导跳转，不能主动开启。
+ *
+ * 注意它回答的是「系统里勾选了没有」，与「服务此刻是否真的在运行」是两件事 ——
+ * 后者由服务自己在 `onServiceConnected` / `onUnbind` 写入 `CaptureState.accessibilityEnabled`，
+ * 两者不一致（已勾选但服务未连上）恰恰是排查「为什么没采到」的关键线索。
+ *
+ * @return true 表示已在系统设置中启用
+ */
+fun Context.isAccessibilityServiceEnabled(): Boolean =
+    isAnyServiceEnabledIn(ENABLED_ACCESSIBILITY_SERVICES)
+
+/**
+ * 跳转系统「无障碍」设置页。
+ *
+ * 无障碍不需要厂商私有入口：`ACTION_ACCESSIBILITY_SETTINGS` 在各 ROM 上都指向
+ * 本机无障碍服务列表，用户在其下找到本应用开关即可。
+ */
+fun Context.openAccessibilitySettings() {
+    safeStartActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+}
+
+/**
+ * 某类「系统设置里存储的已启用服务列表」中，是否包含本应用声明的任一服务。
+ *
+ * 系统存的是冒号分隔的 ComponentName 扁平名列表（包部分为本应用 applicationId，
+ * 即便服务组件声明在 data 模块），逐个反扁平化后与「本应用已声明的服务」精确比对，
+ * 比直接 contains(packageName) 更严谨（避免子串误判），且跨厂商 ROM 通用。
+ *
+ * @param settingsKey 设置键，如 [NOTIFICATION_LISTENERS]
+ */
+private fun Context.isAnyServiceEnabledIn(settingsKey: String): Boolean {
+    val flat = Settings.Secure.getString(contentResolver, settingsKey)
     if (flat.isNullOrBlank()) return false
-    // 系统存的是冒号分隔的 ComponentName 扁平名列表（包部分为本应用 applicationId，
-    // 即便 listener 组件声明在 data 模块），逐个反扁平化后与「本应用已声明的服务」精确比对，
-    // 比直接 contains(packageName) 更严谨（避免子串误判），且跨厂商 ROM 通用。
     val enabled = flat.split(':').mapNotNull { ComponentName.unflattenFromString(it) }
     val services = runCatching {
         packageManager.getPackageInfo(packageName, PackageManager.GET_SERVICES).services
@@ -52,6 +85,12 @@ fun Context.isNotificationListenerEnabled(): Boolean {
         enabled.any { it.packageName == cn.packageName && it.className == cn.className }
     }
 }
+
+/** 系统设置中「已启用的通知监听器」键 */
+private const val NOTIFICATION_LISTENERS = "enabled_notification_listeners"
+
+/** 系统设置中「已启用的无障碍服务」键 */
+private const val ENABLED_ACCESSIBILITY_SERVICES = "enabled_accessibility_services"
 
 /**
  * 跳转到「通知使用权」设置页。

@@ -1,14 +1,13 @@
 package com.kai.bill.data.mapper
 
 import com.kai.bill.core.db.entity.BillEntity
-import com.kai.bill.core.db.entity.SourceType as EntitySourceType
 import com.kai.bill.domain.model.Bill
-import com.kai.bill.domain.model.SourceType
 
 /**
  * Bill Entity ⇄ Domain 映射。
  *
  * Entity 字段名 `time` 对应领域 `tradeTimeMillis`。
+ * 枚举转换在 [toEntity] / [toDomain] 两个同包入口里，本文件不再自带私有实现。
  */
 object BillMapper {
 
@@ -45,16 +44,4 @@ object BillMapper {
         createdAt = bill.createdAt,
         updatedAt = bill.updatedAt
     )
-}
-
-private fun EntitySourceType.toDomain(): SourceType = when (this) {
-    EntitySourceType.NOTIFICATION -> SourceType.NOTIFICATION
-    EntitySourceType.SMS -> SourceType.SMS
-    EntitySourceType.MANUAL -> SourceType.MANUAL
-}
-
-private fun SourceType.toEntity(): EntitySourceType = when (this) {
-    SourceType.NOTIFICATION -> EntitySourceType.NOTIFICATION
-    SourceType.SMS -> EntitySourceType.SMS
-    SourceType.MANUAL -> EntitySourceType.MANUAL
 }

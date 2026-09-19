@@ -1,99 +1,57 @@
 package com.kai.bill.data.ingest
 
-import com.kai.bill.data.parser.AmountNormalizer
-import com.kai.bill.data.parser.CategoryKeywordMatcher
-import com.kai.bill.data.parser.DedupKey
-import com.kai.bill.data.parser.FieldExtractor
-import com.kai.bill.data.parser.RuleEngine
-import com.kai.bill.domain.model.Bill
-import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.CaptureResult
-import com.kai.bill.domain.model.ParseRule
 import com.kai.bill.domain.model.SourceType
-import com.kai.bill.domain.repository.BillRepository
-import com.kai.bill.domain.repository.ParseRuleRepository
-import com.kai.bill.data.notify.BillSavedNotifier
-import com.kai.bill.domain.time.Clock
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.onEach
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 所有来源统一入口：解析 → 去重 → 落库。
+ * 所有采集来源的统一入口（对外签名保持不变）。
  *
- * 规则来自 [ParseRuleRepository]（已入库，可热更新）。为降低每次采集的 DB 读取开销，
- * 在 `init` 中订阅已启用规则并缓存在内存；规则变更（含重新播种）会自动刷新缓存。
- *
- * 解析失败策略：
- * - 无规则命中 → [CaptureResult.PARSE_FAILED]（不落库；后续可由短信补扫 / 手动记账兜底）
- * - 命中规则但金额缺失 → [CaptureResult.NEEDS_REVIEW]
- * - 命中并抽到金额 → 构造 Bill 落库；若 [com.kai.bill.core.db.entity.BillEntity.dedupHash]
- *   唯一索引冲突（insert IGNORE 返回 -1）→ [CaptureResult.DUPLICATE_SKIPPED]
+ * 解析职责已整体下沉到 [IngestPipeline]（四级路由），本类现在只是一层薄适配：
+ * - 保留 `ingest(rawText, source)` 这一既有签名，短信补扫（M5）与将来的来源无需改动；
+ * - 不再订阅 `ParseRuleRepository` —— 13 条整包正则已退休（规则数据仍在 `parse_rule` 表里，
+ *   留给 P1 改造成 `match_keyword` 词表），因此采集路径上不再有任何 DB 读。
  */
 @Singleton
 class BillIngestor @Inject constructor(
-    private val parseRuleRepository: ParseRuleRepository,
-    private val billRepository: BillRepository,
-    private val ruleEngine: RuleEngine,
-    private val fieldExtractor: FieldExtractor,
-    private val clock: Clock,
-    private val billSavedNotifier: BillSavedNotifier
+    private val pipeline: IngestPipeline
 ) {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _enabledRules = MutableStateFlow<List<ParseRule>>(emptyList())
-    private val enabledRules = _enabledRules.asStateFlow()
+    /**
+     * @param rawText 已清洗成单行的原文
+     * @param source 采集来源
+     * @param packageName 通知来源包名（账户路由用；短信传 null）
+     * @param eventTimeMillis 事件发生时间（通知 `postTime`），比处理时刻更接近真实交易时间
+     */
+    suspend fun ingest(
+        rawText: String,
+        source: SourceType,
+        packageName: String? = null,
+        eventTimeMillis: Long? = null
+    ): CaptureResult = pipeline.run(
+        rawText = rawText,
+        source = source,
+        packageName = packageName,
+        eventTimeMillis = eventTimeMillis
+    )
 
-    init {
-        parseRuleRepository.observeEnabled()
-            .onEach { _enabledRules.value = it }
-            .launchIn(scope)
-    }
-
-    suspend fun ingest(rawText: String, source: SourceType): CaptureResult {
-        val rules = enabledRules.value.filter { it.source == source }
-        val rule = ruleEngine.match(rawText, source, rules) ?: return CaptureResult.PARSE_FAILED
-
-        val fields = fieldExtractor.extract(rawText, rule)
-        val amountCents = AmountNormalizer.toCents(fields.amountText) ?: return CaptureResult.NEEDS_REVIEW
-
-        // 命中商户 / 场景词时，用映射里的「二级分类 + 收支类型」覆盖规则默认（多为「其他支出 / 支出」），
-        // 让自动账单按用户整理的收支文案库归类，并修正收入被错记成支出的问题。
-        val keywordHit = CategoryKeywordMatcher.match(rawText)
-        val categoryId = keywordHit?.first ?: rule.defaultCategoryId ?: 12L
-        val billType = keywordHit?.second ?: BillType.EXPENSE
-
-        val now = clock.nowMillis()
-        val dedupHash = DedupKey.build(amountCents, now, fields.merchant)
-
-        val bill = Bill(
-            amountCents = amountCents,
-            type = billType,
-            countInStats = true,
-            categoryId = categoryId,
-            accountId = rule.defaultAccountId,
-            merchant = fields.merchant,
-            note = null,
-            tradeTimeMillis = now,
-            source = source,
-            rawText = rawText,
-            dedupHash = dedupHash,
-            createdAt = now,
-            updatedAt = now
-        )
-
-        val savedId = billRepository.save(bill)
-        return if (savedId == -1L) {
-            CaptureResult.DUPLICATE_SKIPPED
-        } else {
-            billSavedNotifier.notifySaved(amountCents, billType, source)
-            CaptureResult.PARSED_AND_SAVED
-        }
-    }
+    /**
+     * 与 [ingest] 同一条流水线，额外返回落库账单 id。
+     *
+     * 供 `SignalReconciler` 使用：确认卡片要按主键让用户改 / 撤刚记下的那一笔。
+     *
+     * @see IngestPipeline.runOutcome
+     */
+    suspend fun ingestOutcome(
+        rawText: String,
+        source: SourceType,
+        packageName: String? = null,
+        eventTimeMillis: Long? = null
+    ): IngestOutcome = pipeline.runOutcome(
+        rawText = rawText,
+        source = source,
+        packageName = packageName,
+        eventTimeMillis = eventTimeMillis
+    )
 }

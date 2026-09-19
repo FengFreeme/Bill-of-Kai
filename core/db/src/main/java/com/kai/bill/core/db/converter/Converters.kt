@@ -5,6 +5,7 @@ import com.kai.bill.core.db.entity.AccountType
 import com.kai.bill.core.db.entity.BillType
 import com.kai.bill.core.db.entity.BudgetPeriod
 import com.kai.bill.core.db.entity.DailyMode
+import com.kai.bill.core.db.entity.PendingReason
 import com.kai.bill.core.db.entity.SourceType
 
 /**
@@ -53,6 +54,17 @@ class Converters {
     @TypeConverter
     fun toDailyMode(value: String?): DailyMode? =
         value?.let { parseEnum(it, DailyMode.ELASTIC) }
+
+    @TypeConverter
+    fun fromPendingReason(value: PendingReason?): String? = value?.name
+
+    /**
+     * 兜底为 [PendingReason.DIRECTION_UNKNOWN]（而不是抛异常）：这是「最不确定」的那一档，
+     * 用户看到「方向待定」比整张待确认表读不出来要好得多。
+     */
+    @TypeConverter
+    fun toPendingReason(value: String?): PendingReason? =
+        value?.let { parseEnum(it, PendingReason.DIRECTION_UNKNOWN) }
 }
 
 /**

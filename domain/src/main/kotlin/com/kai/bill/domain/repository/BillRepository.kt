@@ -2,6 +2,7 @@ package com.kai.bill.domain.repository
 
 import com.kai.bill.domain.model.Bill
 import com.kai.bill.domain.model.BillFilter
+import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.DateRange
 import kotlinx.coroutines.flow.Flow
 
@@ -55,6 +56,42 @@ interface BillRepository {
      * @return 保存后的记录 ID；新增时返回数据库自增 ID
      */
     suspend fun save(bill: Bill): Long
+
+    /**
+     * 时间窗内是否已存在「金额 + 类型」相同的账单。
+     *
+     * 这是与 `dedupHash` 唯一索引互补的**第二道去重**：唯一索引只能识别落在同一个「秒格」里的
+     * 重复，而两条投递的实际间隔只要跨过秒格边界就会漏网（见 `DedupKey`）。本方法按实际时间差
+     * 判断，与秒格对齐无关，把「相近时间内的同一笔」从概率判断变成确定判断。
+     *
+     * @param amountCents 金额（分）
+     * @param type 账单类型
+     * @param timeMillis 待判定账单的交易时间（毫秒）
+     * @param windowMillis 窗口半径；匹配区间为 `timeMillis ± windowMillis`
+     * @return 命中即 true
+     */
+    suspend fun existsInWindow(
+        amountCents: Long,
+        type: BillType,
+        timeMillis: Long,
+        windowMillis: Long
+    ): Boolean
+
+    /**
+     * 查询时间窗内、来源为自动采集的账单 —— 信号决策用它回答「这笔记过没有」与「哪些能补分类」。
+     *
+     * 本方法存在的意义是让「哪些账单允许被程序改写」这条规则留在实现层，
+     * domain 只表达「我需要一批候选」这一意图，SQL 细节不外泄。
+     *
+     * 实现约定：结果**只包含自动采集来源**（排除 [com.kai.bill.domain.model.SourceType.MANUAL]），
+     * 且**不按分类过滤** —— 「分类仍是兜底值」那条筛选留给调用方，
+     * 因为调用方还要用这批数据判断「这笔是否已经记过」，而**已记过的那笔往往已带正确分类**。
+     *
+     * @param startMillis 窗口下界（含）
+     * @param endMillis 窗口上界（含）
+     * @return 按交易时间倒序的账单；可能为空
+     */
+    suspend fun findAutoBillsInWindow(startMillis: Long, endMillis: Long): List<Bill>
 
     /**
      * 按主键删除一笔账单。

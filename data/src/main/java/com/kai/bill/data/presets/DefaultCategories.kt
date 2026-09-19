@@ -46,6 +46,22 @@ object DefaultCategories {
     )
 
     /**
+     * 二级分类（转账）。
+     *
+     * 转账不计入收支统计，但**钱是进来了还是出去了**是用户看账单时的第一诉求：
+     * 「朋友还我 200」与「我借给朋友 200」金额完全一样，光看「转账」两个字分不出来，
+     * 所以按方向拆成转入 / 转出。
+     *
+     * id 从 96 起：1..20 已被历史账单引用（不可改动），21..95 已被支出 / 收入二级占用，
+     * 只做纯增量，因此同样**不改表、不 bump 数据库版本**。
+     */
+    private val subTransfer: List<Category> = listOf(
+        // 转账(19)
+        Category(96, "转入", "arrow-down", "#7C8894", BillType.TRANSFER, 19, 1, true),
+        Category(97, "转出", "arrow-up", "#7C8894", BillType.TRANSFER, 19, 2, true)
+    )
+
+    /**
      * 二级分类（支出）。
      *
      * 三条硬约定：
@@ -159,5 +175,5 @@ object DefaultCategories {
         Category(95, "中奖", "trophy", "#9AA5B1", BillType.INCOME, 18, 3, true)
     )
 
-    val all: List<Category> = expense + income + transfer + subExpense + subIncome
+    val all: List<Category> = expense + income + transfer + subExpense + subIncome + subTransfer
 }

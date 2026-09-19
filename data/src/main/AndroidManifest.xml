@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   data 模块组件声明（merge 进 app）。
-  M4 在此注册 NotificationListener；SmsReceiver / CaptureForegroundService / SmsScanWorker 在 M5/M6 补充。
+  M4 注册 NotificationListener 与 L2 无障碍服务（分类识别）；
+  SmsReceiver / SmsScanWorker 在 M5/M6 补充。
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -22,6 +23,25 @@
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
+        </service>
+
+        <!--
+            L2 无障碍服务：读取白名单 App 的页面文本，用于给账单补全分类。
+            exported=false —— 该服务只由系统无障碍框架绑定，不需要（也不应该）对外暴露；
+            BIND_ACCESSIBILITY_SERVICE 由系统持有，应用自身无该权限，
+            因此第三方无法伪造绑定（这是无障碍服务的安全边界）。
+        -->
+        <service
+            android:name="com.kai.bill.data.capture.accessibility.KaiAccessibilityService"
+            android:exported="false"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
         <!--

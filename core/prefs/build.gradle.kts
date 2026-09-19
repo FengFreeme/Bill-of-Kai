@@ -41,4 +41,9 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // ---- 单元测试（纯 JVM）----
+    // 只测诊断历史的编解码：它是本模块唯一含「分隔符 + 截断」的有状态逻辑，
+    // 写坏一次会让整段历史错位，且只会在真机上被用户发现
+    testImplementation(libs.junit)
 }

@@ -13,7 +13,9 @@ import androidx.core.app.NotificationCompat
  * 设计约束（见文档 §8.1）：
  * - 只在 [android.service.notification.NotificationListenerService.onNotificationPosted] 内轻量执行，
  *   只读 `extras` 与字符串处理，绝不在此做 IO / 数据库写入；
- * - 抽取结果可能含冗余（标题/正文重复），规则引擎层再负责清洗，这里只保证「尽量拿到完整文本」。
+ * - 抽取结果按「去重 + 丢掉被包含的短片段」归一化后再拼接：厂商常把同一句话塞进多个 extras
+ *   （正文 [NotificationCompat.EXTRA_TEXT] 与大文本 [NotificationCompat.EXTRA_BIG_TEXT] 尤其常见），
+ *   原样拼接会让同一段话在采集诊断与账单 `rawText` 里出现两遍。
  */
 object NotificationTextExtractor {
 
@@ -45,11 +47,41 @@ object NotificationTextExtractor {
 
         if (parts.isEmpty()) return null
 
-        return parts
+        return normalizeAndJoin(parts)
+    }
+
+    /**
+     * 片段归一化 + 拼接。
+     *
+     * 做两件事：
+     * 1. **去重**：同一句话被塞进 [NotificationCompat.EXTRA_TEXT] 与
+     *    [NotificationCompat.EXTRA_BIG_TEXT] 时内容完全一致，原样拼接会出现两遍；
+     * 2. **丢掉被包含的短片段**：大文本往往是正文的完整版（包含而非相等），
+     *    这时保留信息量更大的那条。
+     *
+     * `EXTRA_TEXT` 与 `EXTRA_BIG_TEXT` 都取仍是必须的（折叠态下个别厂商只有其一有内容），
+     * 这里只消除它们内容重叠带来的冗余。
+     *
+     * 抽成独立纯函数是为了能单测 —— [extract] 的入参是 Android 的 `StatusBarNotification`，
+     * JVM 单测里造不出来。
+     */
+    internal fun normalizeAndJoin(parts: List<CharSequence>): String? {
+        val normalized = parts
             .asSequence()
-            .map { it.toString() }
+            .map { it.toString().trim() }
             .filter { it.isNotBlank() }
-            .joinToString(" ") { it.trim() }
+            .distinct()
+            .toList()
+
+        if (normalized.isEmpty()) return null
+
+        // 只丢「被更长的片段完整包含」的短片段；等长且互不相同者不可能互相包含，不会误删
+        val deduped = normalized.filter { candidate ->
+            normalized.none { other -> other.length > candidate.length && other.contains(candidate) }
+        }
+
+        return deduped
+            .joinToString(" ")
             .replace(Regex("\\s+"), " ")
             .trim()
             .takeIf { it.isNotBlank() }

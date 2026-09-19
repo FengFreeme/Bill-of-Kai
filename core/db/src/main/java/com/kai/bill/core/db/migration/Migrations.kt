@@ -1,16 +1,64 @@
 package com.kai.bill.core.db.migration
 
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * 数据库迁移集合。
  *
- * M0 阶段库版本为 1，**尚无迁移**。自 M1 起每次升版都：
- * 1. 在 `core/db/schemas/` 下核对 Room 导出的新版 schema
+ * 每次升版都按这套流程走：
+ * 1. 在 `core/db/schemas/` 下核对 Room 导出的新版 schema（本模块已开 `exportSchema`）
  * 2. 在本文件新增一条 [Migration]（命名 `MIGRATION_x_y`）
- * 3. 加进 [ALL_MIGRATIONS]，并 bump [com.kai.bill.core.db.KaiDatabase.VERSION]
+ * 3. 加进 [ALL_MIGRATIONS]，并 bump `KaiDatabase` 里的 `DATABASE_VERSION`
+ * 4. 确认 `app/di/DatabaseModule` 的 `addMigrations(...)` 已生效
  *
- * 遗漏迁移会让 Room 走 `fallbackToDestructiveMigration`，直接清空用户全部账目，
- * 这是本项目最不能接受的事故，因此务必逐步核对。
+ * **不得再依赖 `fallbackToDestructiveMigration`**：它会在迁移缺失时静默清空用户全部账目，
+ * 而用户真机上已经有真实账目。缺迁移时宁可让 Room 抛异常（打不开），也不要静默清库。
  */
-val ALL_MIGRATIONS: Array<Migration> = emptyArray()
+/**
+ * v1 → v2：新增待确认表 `pending_bill`。
+ *
+ * 纯增量建表，不改任何既有表的列，因此不会触碰用户已有账目 —— 这是迁移里最安全的一类。
+ *
+ * 建表 SQL 与索引名**逐字抄自 Room 导出的
+ * `core/db/schemas/com.kai.bill.core.db.KaiDatabase/2.json`**（字段顺序、NOT NULL、
+ * 索引命名全部与 Room 的期望一致）。这一步不能凭记忆手写：任何偏差都会在 Room 启动时
+ * 的 schema 校验（`validateMigration`）里炸成「升级后打不开」，而不是在编译期被发现。
+ */
+val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `pending_bill` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`amountCents` INTEGER NOT NULL, " +
+                "`suggestedType` TEXT, " +
+                "`suggestedCategoryId` INTEGER, " +
+                "`suggestedAccountId` INTEGER, " +
+                "`suggestedCountInStats` INTEGER NOT NULL, " +
+                "`reason` TEXT NOT NULL, " +
+                "`matchedKeyword` TEXT, " +
+                "`time` INTEGER NOT NULL, " +
+                "`source` TEXT NOT NULL, " +
+                "`rawText` TEXT, " +
+                "`dedupHash` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_pending_bill_createdAt` " +
+                "ON `pending_bill` (`createdAt`)"
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_pending_bill_dedupHash` " +
+                "ON `pending_bill` (`dedupHash`)"
+        )
+    }
+}
+
+/**
+ * 全部迁移，按版本顺序排列，由 `app/di/DatabaseModule` 的 `addMigrations(*ALL_MIGRATIONS)` 生效。
+ *
+ * NOTE: 本常量必须声明在它引用的迁移**之后** —— Kotlin 顶层属性按声明顺序初始化，
+ * 反过来写会直接编译报错（`Variable must be initialized`）。
+ */
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)

@@ -22,9 +22,11 @@ import javax.inject.Singleton
  * [StatsRepository] 的 Room 实现。
  *
  * 注入 [StatsDao]，把 `core:db` 的 Row 映射成领域模型；自身不放业务逻辑，
- * 聚合口径全部由 [StatsDao] 的 SQL 保证（`countInStats = 1`、按 `time` 而非
- * `createdAt`、`COALESCE(SUM, 0)`）—— 这三条例外一旦被破坏，
+ * 聚合口径全部由 [StatsDao] 的 SQL 保证（`(type = 'TRANSFER' OR countInStats = 1)`、
+ * 按 `time` 而非 `createdAt`、`COALESCE(SUM, 0)`）—— 这几条一旦被破坏，
  * 转账还款就会混进「本月支出」，修起来要翻整个统计页。
+ *
+ * 「转账维度不看 `countInStats`」这条例外已下沉到 SQL，本层不再传任何开关。
  */
 @Singleton
 class StatsRepositoryImpl @Inject constructor(
