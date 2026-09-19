@@ -29,10 +29,23 @@ object Route {
     const val APPEARANCE = "appearance"
     const val BUDGET = "budget"
     const val ONBOARDING = "onboarding"
-    const val CATEGORY_MANAGE = "category_manage"
+    /**
+     * 分类管理。`parentId` 是可选的：带上时进入页面会定位到该一级分类，并直接弹「在它下面新增」
+     * （记一笔二级网格末尾的「＋」就是带着所属大类进去的，否则新增会落到列表末尾成一级分类）。
+     *
+     * 注册路由用本常量（含 `{parentId}` 占位），**导航一律走 [categoryManage]** ——
+     * 直接把常量交给 `navigate()` 会把 `{parentId}` 当字面量塞给 LongType。
+     */
+    const val CATEGORY_MANAGE = "category_manage?parentId={parentId}"
+
+    /** 打开分类管理的路由；[parentId] 为 null 表示普通进入（不定位、不自动弹新增框） */
+    fun categoryManage(parentId: Long? = null): String =
+        if (parentId == null) "category_manage" else "category_manage?parentId=$parentId"
+
     const val ACCOUNT_MANAGE = "account_manage"
     const val PARSE_RULE = "parse_rule"
     const val NEEDS_REVIEW = "needs_review"
+    const val BACKUP = "backup"
 
     /** 需要显示底栏的 Tab 根路由 */
     val tabRoots: Set<String> = setOf(HOME, STATS, SETTINGS)

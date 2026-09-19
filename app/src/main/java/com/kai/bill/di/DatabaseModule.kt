@@ -8,7 +8,9 @@ import com.kai.bill.core.db.dao.BillDao
 import com.kai.bill.core.db.dao.BudgetDao
 import com.kai.bill.core.db.dao.CategoryDao
 import com.kai.bill.core.db.dao.ParseRuleDao
+import com.kai.bill.core.db.dao.PendingBillDao
 import com.kai.bill.core.db.dao.StatsDao
+import com.kai.bill.core.db.migration.ALL_MIGRATIONS
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,11 +24,14 @@ import javax.inject.Singleton
  * 实例统一在此创建：业务代码禁止自行 `Room.databaseBuilder`，
  * 否则会有多实例 + 迁移不一致的风险。
  *
- * 迁移策略：M1 起应用已会播种真实分类/账户并沉淀用户账单，清库不可接受。
- * 当前 `DATABASE_VERSION = 1` 尚未演进，**暂留** `fallbackToDestructiveMigration()`
- * 仅用于开发期快速迭代；**一旦 `DATABASE_VERSION` 自增，必须在此 `addMigrations(...)`
- * 补真实 `Migration`（见 `data/migration/Migrations.kt`），并移除该 fallback**，
- * 否则旧版用户升级时会丢失全部账目。
+ * 迁移策略：应用已会播种真实分类/账户并沉淀用户账单，**清库不可接受**，
+ * 因此这里显式挂上 [ALL_MIGRATIONS] 且**不提供任何兜底**。
+ * 缺迁移时宁可让 Room 抛异常（旧版本升级后打不开，问题当天暴露），
+ * 也不要像 `fallbackToDestructiveMigration` 那样静默清空用户全部账目，
+ * 后者往往要等到用户发现「账单没了」才被察觉。
+ *
+ * 迁移文件位置：`core/db/src/main/java/com/kai/bill/core/db/migration/Migrations.kt`
+ * （注意不是 `data` 模块 —— `Migration` 与 Entity 同属 `core:db`）。
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -40,7 +45,7 @@ object DatabaseModule {
             KaiDatabase::class.java,
             KaiDatabase.DATABASE_NAME
         )
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .addMigrations(*ALL_MIGRATIONS)
             .build()
 
     @Provides
@@ -60,4 +65,7 @@ object DatabaseModule {
 
     @Provides
     fun provideParseRuleDao(db: KaiDatabase): ParseRuleDao = db.parseRuleDao()
+
+    @Provides
+    fun providePendingBillDao(db: KaiDatabase): PendingBillDao = db.pendingBillDao()
 }

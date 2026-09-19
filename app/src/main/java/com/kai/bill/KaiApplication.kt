@@ -2,6 +2,7 @@ package com.kai.bill
 
 import android.app.Application
 import com.kai.bill.data.capture.notification.NotificationCapture
+import com.kai.bill.data.pending.PendingBillCleaner
 import com.kai.bill.data.seed.DatabaseSeeder
 import com.kai.bill.data.service.CaptureController
 import dagger.hilt.android.HiltAndroidApp
@@ -29,6 +30,9 @@ class KaiApplication : Application() {
     lateinit var seeder: DatabaseSeeder
 
     @Inject
+    lateinit var pendingBillCleaner: PendingBillCleaner
+
+    @Inject
     lateinit var notificationCapture: NotificationCapture
 
     @Inject
@@ -41,6 +45,11 @@ class KaiApplication : Application() {
         // 幂等播种：预置分类/账户用固定 id + IGNORE，重复调用安全
         seedScope.launch {
             runCatching { seeder.seed() }
+                .onFailure { it.printStackTrace() }
+        }
+        // 冷启动顺带清一次过期待确认记录（保留 30 天）；失败不影响启动
+        seedScope.launch {
+            runCatching { pendingBillCleaner.purgeExpired() }
                 .onFailure { it.printStackTrace() }
         }
     }

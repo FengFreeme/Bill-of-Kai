@@ -10,10 +10,28 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Android 13+ 弹「已记账」等通知所需 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        注意：确认卡片**不需要** SYSTEM_ALERT_WINDOW（悬浮窗）。
+        它由无障碍服务用 `TYPE_ACCESSIBILITY_OVERLAY` 类型的窗口承载，
+        该窗口类型不需要任何权限，只要无障碍服务在运行即可 ——
+        商业产品同款（小黑记账「自动记账面板」照常显示，其悬浮窗权限却是 denied）。
+        不要再为这个功能申请悬浮窗权限。
+    -->
 
+    <!--
+        enableOnBackInvokedCallback=false：停用系统「预测性返回」的窗口动画。
+        本工程 targetSdk=36，Android 15+ 默认、Android 16 起强制走预测性返回；
+        在荣耀等 ROM 上，按返回键 / 手势返回会把整个窗口缩成圆角卡片，盖住
+        KaiNavHost 自己的滑动 / 淡入淡出转场（页面内「‹」按钮不走系统返回，故不触发）。
+        置 false 后系统不再播放该动画，返回回落老路径；Navigation Compose 使用的
+        OnBackPressedCallback 仍然有效，popBackStack 与转场不受影响。
+        注：官方措辞是「暂时停用」，未来 Android 版本可能移除该开关，
+        届时需改用 PredictiveBackHandler 自行适配跟手动画。
+    -->
     <application
         android:name=".KaiApplication"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="false"
         android:icon="@drawable/ic_launcher"
         android:label="小凯记账"
         android:roundIcon="@drawable/ic_launcher"
@@ -27,6 +45,27 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            确认卡片：识别成功并落库后自动弹出，让用户当场改分类 / 撤销这一笔。
+            由 data 层用显式 action 拉起（见 ReviewCardContract），因此 action 名必须与之一致。
+            exported=false：只允许本应用启动，外部应用无法用它打开我们的界面。
+            noHistory + excludeFromRecents：它是一次性浮层，不该留在返回栈或最近任务里。
+            windowSoftInputMode=stateUnchanged：卡片不抢输入焦点，避免用户打字时被打断。
+        -->
+        <activity
+            android:name=".review.ReviewCardActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@style/Theme.BillOfKai.ReviewCard"
+            android:windowSoftInputMode="stateUnchanged">
+            <intent-filter>
+                <action android:name="com.kai.bill.action.REVIEW_CARD" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>

@@ -10,4 +10,18 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+
+    <!--
+        确认卡片专用：半透明窗口 + 无标题 + 无进入动画。
+        卡片本体（圆角、阴影、遮罩）全部由 Compose 绘制，窗口只负责「让下层的 App 露出来」——
+        这样卡片外观跟随 App 主题（换肤 / 深模 / 卡片透明度）自动变化，不必维护两份样式。
+    -->
+    <style name="Theme.BillOfKai.ReviewCard" parent="Theme.BillOfKai">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
 </resources>

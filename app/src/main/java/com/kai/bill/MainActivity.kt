@@ -1,6 +1,7 @@
 package com.kai.bill
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,27 +25,55 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.kai.bill.core.design.component.AppBackground
 import com.kai.bill.core.design.theme.BillOfKaiTheme
 import com.kai.bill.core.prefs.KaiPrefs
 import com.kai.bill.core.prefs.ThemeConfig
+import com.kai.bill.data.notify.PendingNotificationContract
+import com.kai.bill.feature.whatsnew.ReleaseNote
+import com.kai.bill.feature.whatsnew.ReleaseNotes
+import com.kai.bill.feature.whatsnew.ReleaseNotesDialog
 import com.kai.bill.navigation.KaiNavHost
 import com.kai.bill.navigation.MainBottomBar
+import com.kai.bill.navigation.Route
+import com.kai.bill.review.EditBillContract
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 /**
  * 主 Activity —— 应用的唯一入口与组合根。
  *
  * 职责最小化：收集 [KaiPrefs.themeConfig]（主题色 / 深模 / 背景图 / 卡片透明度），
  * 装配 [BillOfKaiTheme]，再挂上背景与导航。不写任何 UI 布局、不写业务逻辑。
+ *
+ * 额外负责一件系统级的事：把**通知点击带来的目标页面**翻译成本 App 的路由
+ * （见 [PendingNotificationContract]）—— 通知由 `data` 模块发出，那里看不到路由表，
+ * 翻译职责只能落在 app 层。
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var prefs: KaiPrefs
+
+    /**
+     * 通知点击要求跳转的目标路由；消费后置空。
+     *
+     * 用 [mutableStateOf] 而不是普通字段：`onNewIntent` 可能在 Activity 已在前台时触发
+     * （用户点通知、App 就在后台），此时只有可观察状态才能让已组合的界面响应这次跳转。
+     */
+    private val notificationRoute = mutableStateOf<String?>(null)
+
+    /**
+     * 待展示的更新公告；null 表示不展示。
+     *
+     * 用 [mutableStateOf] 而不是普通字段：判断是异步的（要读一次 DataStore），
+     * 结果回来时界面早已组合完成，只有可观察状态才能让卡片出现。
+     */
+    private val releaseNote = mutableStateOf<ReleaseNote?>(null)
 
     // Android 13+ 需在运行时申请通知权限，否则「已记账」通知不显示
     private val requestPostNotifPermission =
@@ -57,6 +87,19 @@ class MainActivity : ComponentActivity() {
         ) {
             requestPostNotifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        // 冷启动（进程被杀后点通知 / 从确认卡片点「改分类」）走这里
+        notificationRoute.value = intent.toNotificationRoute() ?: intent.toEditBillRoute()
+
+        // 更新公告：装上的版本 ≠ 上次看过并关掉的版本时，弹一次。
+        // 放在冷启动而不是挂在某个页面上：它是应用级事件，挂到首页只会让「首页要不要负责这件事」
+        // 变成每次新增入口都要重新回答的问题。版本没有对应公告时静默跳过（forVersion 返回 null）。
+        lifecycleScope.launch {
+            val currentVersion = BuildConfig.VERSION_NAME
+            if (prefs.lastSeenReleaseVersion() != currentVersion) {
+                releaseNote.value = ReleaseNotes.forVersion(currentVersion)
+            }
+        }
+
         enableEdgeToEdge()
         setContent {
             // 主题配置变化即重组：设置页换肤 / 换背景 / 调透明度后，整个 App 立即生效
@@ -70,14 +113,66 @@ class MainActivity : ComponentActivity() {
                 cardAlpha = config.cardAlpha,
                 hasBackgroundImage = config.backgroundUri != null
             ) {
-                AppRoot(
-                    backgroundPath = config.backgroundUri,
-                    backgroundDim = config.backgroundDim
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AppRoot(
+                        backgroundPath = config.backgroundUri,
+                        backgroundDim = config.backgroundDim,
+                        backgroundScale = config.backgroundScale,
+                        backgroundOffsetX = config.backgroundOffsetX,
+                        backgroundOffsetY = config.backgroundOffsetY,
+                        notificationRoute = notificationRoute.value,
+                        onNotificationRouteHandled = { notificationRoute.value = null }
+                    )
+                    // 公告浮在最上层（含底栏之上）：它是应用级提示，不属于任何一个页面
+                    releaseNote.value?.let { note ->
+                        ReleaseNotesDialog(note = note, onDismiss = ::dismissReleaseNote)
+                    }
+                }
             }
         }
     }
+
+    /**
+     * 关掉更新公告，并记下「这个版本已经看过了」。
+     *
+     * 标记写在**用户关掉的那一刻**，而不是启动时：进程若在卡片弹出之前被杀，
+     * 下次启动应当照常再弹一次，而不是把这条公告永久吞掉。
+     */
+    private fun dismissReleaseNote() {
+        releaseNote.value = null
+        lifecycleScope.launch { prefs.markReleaseVersionSeen(BuildConfig.VERSION_NAME) }
+    }
+
+    /** App 已在前台 / 后台时点通知走这里（Intent 带 `FLAG_ACTIVITY_SINGLE_TOP`，不会重建 Activity） */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationRoute.value = intent.toNotificationRoute() ?: intent.toEditBillRoute()
+    }
 }
+
+/**
+ * 「去改这一笔」请求 → 本 App 的编辑页路由。
+ *
+ * 刻意复用通知那条通路（同一个 `notificationRoute` 状态）：两者都是「从外部把用户送到某个页面」，
+ * 只是发起者不同（通知 vs 确认卡片）。再开一条平行通路，就会多一处需要同步维护的跳转逻辑。
+ */
+private fun Intent?.toEditBillRoute(): String? =
+    this?.getLongExtra(EditBillContract.EXTRA_EDIT_BILL_ID, 0L)
+        ?.takeIf { it > 0L }
+        ?.let(Route::recordEdit)
+
+/**
+ * 通知里的「目标页面」标记 → 本 App 的路由名。
+ *
+ * 未识别的标记返回 null（例如通知来自更高版本、带了个本版本还不认识的目标），
+ * 此时只打开 App 首页，不做多余跳转。
+ */
+private fun Intent?.toNotificationRoute(): String? =
+    when (this?.getStringExtra(PendingNotificationContract.EXTRA_DESTINATION)) {
+        PendingNotificationContract.DESTINATION_NEEDS_REVIEW -> Route.NEEDS_REVIEW
+        else -> null
+    }
 
 /**
  * 组合根：背景层 + 底栏常驻 + 全屏 NavHost。
@@ -89,10 +184,24 @@ class MainActivity : ComponentActivity() {
  * - Tab 根页背景透明（透出根部背景图，图像与底栏区域连续），二级页自铺整屏背景盖住底栏。
  */
 @Composable
-private fun AppRoot(backgroundPath: String?, backgroundDim: Float) {
+private fun AppRoot(
+    backgroundPath: String?,
+    backgroundDim: Float,
+    backgroundScale: Float,
+    backgroundOffsetX: Float,
+    backgroundOffsetY: Float,
+    notificationRoute: String?,
+    onNotificationRouteHandled: () -> Unit
+) {
     val navController = rememberNavController()
 
-    AppBackground(imagePath = backgroundPath, dim = backgroundDim) {
+    AppBackground(
+        imagePath = backgroundPath,
+        dim = backgroundDim,
+        scale = backgroundScale,
+        offsetX = backgroundOffsetX,
+        offsetY = backgroundOffsetY
+    ) {
         Scaffold(containerColor = Color.Transparent) { innerPadding ->
             Box(
                 modifier = Modifier
@@ -114,6 +223,8 @@ private fun AppRoot(backgroundPath: String?, backgroundDim: Float) {
                     navController = navController,
                     tabBottomInset = innerPadding.calculateBottomPadding(),
                     backgroundPath = backgroundPath,
+                    notificationRoute = notificationRoute,
+                    onNotificationRouteHandled = onNotificationRouteHandled,
                     modifier = Modifier.fillMaxSize()
                 )
             }

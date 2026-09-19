@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.Dp
@@ -35,6 +36,7 @@ import com.kai.bill.feature.record.RecordRoute
 import com.kai.bill.feature.settings.SettingsScreen
 import com.kai.bill.feature.settings.account.AccountManageRoute
 import com.kai.bill.feature.settings.appearance.AppearanceRoute
+import com.kai.bill.feature.settings.backup.BackupRoute
 import com.kai.bill.feature.settings.category.CategoryManageRoute
 import com.kai.bill.feature.settings.review.NeedsReviewRoute
 import com.kai.bill.feature.settings.rule.ParseRuleRoute
@@ -61,6 +63,9 @@ import com.kai.bill.feature.stats.StatsRoute
  * @param navController 导航控制器
  * @param tabBottomInset 系统区底部系统 inset（如导航手势条），叠加到 Tab 底栏预留高度上
  * @param backgroundPath 自定义背景图路径；null 表示纯色背景
+ * @param notificationRoute 通知点击带来的目标路由；由 `MainActivity` 从 Intent 解析后传入，
+ *        消费一次即由 [onNotificationRouteHandled] 清空（否则每次重组都会重新导航）
+ * @param onNotificationRouteHandled 目标路由已被消费的回调
  * @param modifier 外部修饰符
  */
 @Composable
@@ -68,9 +73,18 @@ fun KaiNavHost(
     navController: NavHostController,
     tabBottomInset: Dp = 0.dp,
     backgroundPath: String? = null,
+    notificationRoute: String? = null,
+    onNotificationRouteHandled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val tabBottomPad = KaiBottomBarHeight + tabBottomInset
+
+    // 点通知进入指定页面：`launchSingleTop` 保证用户已经在该页时不会叠出第二层
+    LaunchedEffect(notificationRoute) {
+        val target = notificationRoute ?: return@LaunchedEffect
+        navController.navigate(target) { launchSingleTop = true }
+        onNotificationRouteHandled()
+    }
 
     NavHost(
         navController = navController,
@@ -86,7 +100,8 @@ fun KaiNavHost(
             HomeRoute(
                 onRecordClick = { navController.navigate(Route.RECORD) },
                 onBillClick = { billId -> navController.navigate(Route.recordEdit(billId)) },
-                onBudgetClick = { navController.navigate(Route.BUDGET) }
+                onBudgetClick = { navController.navigate(Route.BUDGET) },
+                onReviewClick = { navController.navigate(Route.NEEDS_REVIEW) }
             )
         }
         slideComposable(
@@ -107,12 +122,13 @@ fun KaiNavHost(
         ) {
             SettingsScreen(
                 onAppearanceClick = { navController.navigate(Route.APPEARANCE) },
-                onCategoryClick = { navController.navigate(Route.CATEGORY_MANAGE) },
+                onCategoryClick = { navController.navigate(Route.categoryManage()) },
                 onAccountClick = { navController.navigate(Route.ACCOUNT_MANAGE) },
                 onRulesClick = { navController.navigate(Route.PARSE_RULE) },
                 onBudgetClick = { navController.navigate(Route.BUDGET) },
                 onReviewClick = { navController.navigate(Route.NEEDS_REVIEW) },
-                onOnboardingClick = { navController.navigate(Route.ONBOARDING) }
+                onOnboardingClick = { navController.navigate(Route.ONBOARDING) },
+                onBackupClick = { navController.navigate(Route.BACKUP) }
             )
         }
 
@@ -120,7 +136,7 @@ fun KaiNavHost(
         slideComposable(Route.RECORD, backgroundPath = backgroundPath) {
             RecordRoute(
                 onClose = { navController.popBackStack() },
-                onManageCategory = { navController.navigate(Route.CATEGORY_MANAGE) }
+                onManageCategory = { parentId -> navController.navigate(Route.categoryManage(parentId)) }
             )
         }
         slideComposable(
@@ -132,14 +148,26 @@ fun KaiNavHost(
             RecordRoute(
                 billId = billId,
                 onClose = { navController.popBackStack() },
-                onManageCategory = { navController.navigate(Route.CATEGORY_MANAGE) }
+                onManageCategory = { parentId -> navController.navigate(Route.categoryManage(parentId)) }
             )
         }
         slideComposable(Route.APPEARANCE, backgroundPath = backgroundPath) { AppearanceRoute() }
         slideComposable(Route.BUDGET, backgroundPath = backgroundPath) { BudgetRoute() }
         slideComposable(Route.ONBOARDING, backgroundPath = backgroundPath) { PermissionCheckRoute() }
-        slideComposable(Route.CATEGORY_MANAGE, backgroundPath = backgroundPath) {
-            CategoryManageRoute(onBack = { navController.popBackStack() })
+        slideComposable(
+            route = Route.CATEGORY_MANAGE,
+            // parentId 可选：记一笔二级网格的「＋」会带上所属大类，进页面直接定位到它
+            arguments = listOf(navArgument("parentId") {
+                type = NavType.LongType
+                defaultValue = -1L
+            }),
+            backgroundPath = backgroundPath
+        ) { backStackEntry ->
+            val parentId = backStackEntry.arguments?.getLong("parentId") ?: -1L
+            CategoryManageRoute(
+                onBack = { navController.popBackStack() },
+                focusParentId = parentId
+            )
         }
         slideComposable(
             route = Route.CATEGORY_DETAIL,
@@ -150,7 +178,7 @@ fun KaiNavHost(
             CategoryDetailRoute(
                 categoryId = categoryId,
                 onBack = { navController.popBackStack() },
-                onEdit = { navController.navigate(Route.CATEGORY_MANAGE) },
+                onEdit = { navController.navigate(Route.categoryManage()) },
                 onBillClick = { billId -> navController.navigate(Route.recordEdit(billId)) }
             )
         }
@@ -158,7 +186,15 @@ fun KaiNavHost(
             AccountManageRoute(onBack = { navController.popBackStack() })
         }
         slideComposable(Route.PARSE_RULE, backgroundPath = backgroundPath) { ParseRuleRoute() }
-        slideComposable(Route.NEEDS_REVIEW, backgroundPath = backgroundPath) { NeedsReviewRoute() }
+        slideComposable(Route.NEEDS_REVIEW, backgroundPath = backgroundPath) {
+            NeedsReviewRoute(
+                onBack = { navController.popBackStack() },
+                onEditBill = { billId -> navController.navigate(Route.recordEdit(billId)) }
+            )
+        }
+        slideComposable(Route.BACKUP, backgroundPath = backgroundPath) {
+            BackupRoute(onBack = { navController.popBackStack() })
+        }
     }
 }
 

@@ -1,16 +1,20 @@
 package com.kai.bill.di
 
 import com.kai.bill.data.repository.AccountRepositoryImpl
+import com.kai.bill.data.repository.BackupRepositoryImpl
 import com.kai.bill.data.repository.BillRepositoryImpl
 import com.kai.bill.data.repository.BudgetRepositoryImpl
 import com.kai.bill.data.repository.CategoryRepositoryImpl
 import com.kai.bill.data.repository.ParseRuleRepositoryImpl
+import com.kai.bill.data.repository.PendingBillRepositoryImpl
 import com.kai.bill.data.repository.StatsRepositoryImpl
 import com.kai.bill.domain.repository.AccountRepository
+import com.kai.bill.domain.repository.BackupRepository
 import com.kai.bill.domain.repository.BillRepository
 import com.kai.bill.domain.repository.BudgetRepository
 import com.kai.bill.domain.repository.CategoryRepository
 import com.kai.bill.domain.repository.ParseRuleRepository
+import com.kai.bill.domain.repository.PendingBillRepository
 import com.kai.bill.domain.repository.StatsRepository
 import dagger.Binds
 import dagger.Module
@@ -51,4 +55,12 @@ interface RepositoryModule {
     @Binds
     @Singleton
     fun bindParseRuleRepository(impl: ParseRuleRepositoryImpl): ParseRuleRepository
+
+    @Binds
+    @Singleton
+    fun bindBackupRepository(impl: BackupRepositoryImpl): BackupRepository
+
+    @Binds
+    @Singleton
+    fun bindPendingBillRepository(impl: PendingBillRepositoryImpl): PendingBillRepository
 }

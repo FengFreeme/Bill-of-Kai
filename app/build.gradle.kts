@@ -45,11 +45,11 @@ android {
         // 改名包名不会影响已安装应用的升级与数据
         applicationId = "com.kai.billofkai"
         minSdk = 31
-        targetSdk = 35
+        targetSdk = 36
         // versionCode 由 Git 提交数自动递增（见文件上方 gitCommitCount）
         // versionName 面向用户，语义化版本，手动维护
         versionCode = gitCommitCount
-        versionName = "1.1.0"
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -79,6 +79,9 @@ android {
 
     buildFeatures {
         compose = true
+        // 更新公告要按「当前装的是哪个版本」决定弹不弹：BuildConfig.VERSION_NAME 是编译期常量，
+        // 直接可用；否则得在每次启动时去 PackageManager 查一次，还要处理查询失败的兜底
+        buildConfig = true
     }
 
     packaging {
