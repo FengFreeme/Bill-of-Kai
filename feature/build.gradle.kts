@@ -65,4 +65,9 @@ dependencies {
 
     // ---- 图片加载（背景图预览）----
     implementation(libs.coil.compose)
+
+    // ---- 单元测试 ----
+    // 本模块只测**纯逻辑**（如自绘图表里的刻度取点、格式化），不测 Compose 渲染：
+    // 后者要跑 instrumentation，代价远大于收益；而「刻度算错」这类问题恰好在纯函数里就能钉死。
+    testImplementation(libs.junit)
 }

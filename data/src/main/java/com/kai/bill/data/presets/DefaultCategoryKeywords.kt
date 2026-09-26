@@ -2,12 +2,13 @@ package com.kai.bill.data.presets
 
 import com.kai.bill.data.parser.CategoryKeyword
 import com.kai.bill.domain.model.BillType
+import com.kai.bill.domain.model.RefundCategory
 
 /**
  * 分类级词表（P0：代码常量；P1 迁入 `match_keyword` 表）。
  *
- * 来源：原 `CategoryKeywordMatcher` 的 60 组人工整理词库（品牌词 / 场景词 / 口语化表达），
- * 迁移时按方向拆分，让它能被 [com.kai.bill.data.parser.CategoryRouter] 收窄到「当前方向」内匹配。
+ * 内容为人工整理的品牌词 / 场景词 / 口语化表达，按方向拆分，
+ * 让 [com.kai.bill.data.parser.CategoryRouter] 能收窄到「当前方向」内匹配。
  *
  * 三条约定：
  * - **一级与二级分类 id 混用是允许的**：统计与饼图按分类聚合，两种粒度混用不会算错
@@ -15,7 +16,7 @@ import com.kai.bill.domain.model.BillType
  * - **分类词不决定方向**（方向由 [DefaultMatchKeywords] 的动作词决定），
  *   但每个词都声明所属 [CategoryKeyword.direction]，用于把搜索范围收窄到当前方向。
  * - **口语化词是安全的**：本匹配只在「已抽出金额 + 已定方向」之后执行，
- *   聊天等无关文本根本进不到这一步（旧实现的同一论证见 `CategoryKeywordMatcher` KDoc）。
+ *   聊天等无关文本根本进不到这一步。
  */
 object DefaultCategoryKeywords {
 
@@ -108,9 +109,9 @@ object DefaultCategoryKeywords {
         // 红包类：方向由 [DefaultMatchKeywords] 判为「待确认」，这里的分类是**建议值**（收入·红包）
         addAll(income(90, "微信红包", "压岁钱", "生日红包", "收到红包", "红包收入"))
         addAll(income(18, "收款到账", "营业收入", "货款", "直播带货", "返利", "收了笔款"))
-        // 修正：旧实现把「报销 / 理赔」映射到 94 退款，这里拆到 93 报销
+        // 「报销 / 理赔」是真实进账，归 93 报销；94 退款只给「退货退款」
         addAll(income(93, "报销到账", "报销", "理赔"))
-        addAll(income(94, "退货退款", "退款成功", "退款"))
+        addAll(income(RefundCategory.ID, "退货退款", "退款成功", "退款"))
 
         // —— 转账 ——
         // 结构：19 转账（一级，泛化兜底）下挂 96 转出 / 97 转入 两个二级分类；20 还款 是另一个一级。

@@ -21,8 +21,13 @@ import kotlinx.coroutines.flow.Flow
  * 2. 一律用 `time BETWEEN ...` 而非 `createdAt` —— 补记场景要按**交易时间**归月
  * 3. 一律用 `COALESCE(SUM(...), 0)` —— SQLite 在无匹配行时 `SUM` 返回 NULL
  *
- * ⚠️ `'TRANSFER'` 是 [BillType.TRANSFER] 在库中的**存储值**（见 `Converters`，枚举按 `name` 存 TEXT）。
+ * NOTE: `'TRANSFER'` 是 [BillType.TRANSFER] 在库中的**存储值**（见 `Converters`，枚举按 `name` 存 TEXT）。
  * 重命名该常量时必须同步这里 —— 字面量写错不会编译报错，只会让转账维度静默变空。
+ *
+ * 退款（`isRefund = 1`）在统计里属**支出维度的负项**：维度取
+ * `CASE WHEN isRefund = 1 THEN 'EXPENSE' ELSE type END`，金额取
+ * `CASE WHEN isRefund = 1 THEN -amountCents ELSE amountCents END`（钱退回来了，等于没花）。
+ * 它与 `Bill.signedExpenseCents` 是同一套口径的两个实现，改一侧必须同步另一侧。
  *
  * 全部返回 `Flow`：Room 会监听相关表，记一笔账后统计自动刷新。
  */
@@ -41,10 +46,11 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT type AS billType, COALESCE(SUM(amountCents), 0) AS totalCents
+        SELECT CASE WHEN isRefund = 1 THEN 'EXPENSE' ELSE type END AS billType,
+               COALESCE(SUM(CASE WHEN isRefund = 1 THEN -amountCents ELSE amountCents END), 0) AS totalCents
         FROM bill
         WHERE time BETWEEN :startMillis AND :endMillis AND countInStats = 1
-        GROUP BY type
+        GROUP BY billType
         """
     )
     fun observeTypeTotals(
@@ -61,12 +67,12 @@ interface StatsDao {
     @Query(
         """
         SELECT categoryId AS categoryId,
-               COALESCE(SUM(amountCents), 0) AS totalCents,
+               COALESCE(SUM(CASE WHEN isRefund = 1 THEN -amountCents ELSE amountCents END), 0) AS totalCents,
                COUNT(*) AS billCount
         FROM bill
         WHERE time BETWEEN :startMillis AND :endMillis
           AND (type = 'TRANSFER' OR countInStats = 1)
-          AND type = :type
+          AND CASE WHEN isRefund = 1 THEN 'EXPENSE' ELSE type END = :type
         GROUP BY categoryId
         ORDER BY totalCents DESC
         """
@@ -84,11 +90,12 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT accountId AS accountId, COALESCE(SUM(amountCents), 0) AS totalCents
+        SELECT accountId AS accountId,
+               COALESCE(SUM(CASE WHEN isRefund = 1 THEN -amountCents ELSE amountCents END), 0) AS totalCents
         FROM bill
         WHERE time BETWEEN :startMillis AND :endMillis
           AND (type = 'TRANSFER' OR countInStats = 1)
-          AND type = :type
+          AND CASE WHEN isRefund = 1 THEN 'EXPENSE' ELSE type END = :type
         GROUP BY accountId
         ORDER BY totalCents DESC
         """
@@ -110,11 +117,11 @@ interface StatsDao {
     @Query(
         """
         SELECT strftime('%Y-%m-%d', time / 1000, 'unixepoch', 'localtime') AS bucket,
-               COALESCE(SUM(amountCents), 0) AS totalCents
+               COALESCE(SUM(CASE WHEN isRefund = 1 THEN -amountCents ELSE amountCents END), 0) AS totalCents
         FROM bill
         WHERE time BETWEEN :startMillis AND :endMillis
           AND (type = 'TRANSFER' OR countInStats = 1)
-          AND type = :type
+          AND CASE WHEN isRefund = 1 THEN 'EXPENSE' ELSE type END = :type
         GROUP BY bucket
         ORDER BY bucket ASC
         """
@@ -133,11 +140,11 @@ interface StatsDao {
     @Query(
         """
         SELECT strftime('%Y-%m', time / 1000, 'unixepoch', 'localtime') AS bucket,
-               COALESCE(SUM(amountCents), 0) AS totalCents
+               COALESCE(SUM(CASE WHEN isRefund = 1 THEN -amountCents ELSE amountCents END), 0) AS totalCents
         FROM bill
         WHERE time BETWEEN :startMillis AND :endMillis
           AND (type = 'TRANSFER' OR countInStats = 1)
-          AND type = :type
+          AND CASE WHEN isRefund = 1 THEN 'EXPENSE' ELSE type END = :type
         GROUP BY bucket
         ORDER BY bucket ASC
         """

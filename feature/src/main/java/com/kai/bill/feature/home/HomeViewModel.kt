@@ -15,16 +15,19 @@ import com.kai.bill.domain.repository.AccountRepository
 import com.kai.bill.domain.repository.CategoryRepository
 import com.kai.bill.domain.repository.PendingBillRepository
 import com.kai.bill.domain.time.Clock
+import com.kai.bill.domain.time.DayTicker
 import com.kai.bill.domain.usecase.bill.ObserveBillsUseCase
 import com.kai.bill.domain.usecase.budget.ObserveBudgetProgressUseCase
 import com.kai.bill.domain.usecase.stats.ObserveOverviewUseCase
 import com.kai.bill.core.prefs.KaiPrefs
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -38,16 +41,13 @@ import javax.inject.Inject
 /**
  * 首页 ViewModel。
  *
- * M2：概览数字（累计消费 / 本月支出 / 本月收入 / 今日支出）改由
- * [ObserveOverviewUseCase] 走 `StatsDao` 的 SQL 聚合，替换 M1 的内存全量遍历。
+ * 概览数字（累计消费 / 本月支出 / 本月收入 / 今日支出）走 [ObserveOverviewUseCase] 的
+ * `StatsDao` SQL 聚合：与统计页共用同一个 UseCase，避免口径对不上（首页说 100、统计页说 120），
+ * 也避免把所有账单拉进内存累加而拖慢首屏。
  *
- * 这样做有两个好处：
- * 1. **口径统一**：与统计页共用同一个 UseCase，不会出现首页说支出 100、
- *    统计页说 120 这种对不上的情况
- * 2. **不再扫全表**：原来要把所有账单拉到内存里累加，账单多了会拖慢首屏
- *
- * 流水列表（[buildDailyGroups]）仍需要明细数据，所以 [ObserveBillsUseCase] 保留。
+ * 流水列表（[buildDailyGroups]）仍需要明细，所以 [ObserveBillsUseCase] 保留。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     observeBills: ObserveBillsUseCase,
@@ -56,6 +56,7 @@ class HomeViewModel @Inject constructor(
     categoryRepository: CategoryRepository,
     accountRepository: AccountRepository,
     pendingBillRepository: PendingBillRepository,
+    private val dayTicker: DayTicker,
     private val clock: Clock,
     private val kaiPrefs: KaiPrefs
 ) : ViewModel() {
@@ -68,19 +69,30 @@ class HomeViewModel @Inject constructor(
     /**
      * 三个区间的概览：累计 / 本月 / 今日。
      *
+     * 区间以 [DayTicker] 为上游重算：直接写 `rangeOf { … }` 只在**构造流时**算一次，
+     * 跨日后首页会出现「流水列表已是新的一天、概览还是昨天」的错位（真机上就是预算卡的
+     * 「今日已花」停在昨天）。挂上 ticker 后，跨日与每次重新订阅（切回前台）都用当下时刻重算。
+     *
      * 先合成一个流再并入 [uiState]：`combine` 的 typed overload 最多 5 个源，
      * 把三个 overview 直接写进去会超限。
      */
-    private val overviews: Flow<HomeOverviews> = combine(
-        observeOverview(allTimeRange),
-        observeOverview(rangeOf { TimeRange.month(it, zone) }),
-        observeOverview(rangeOf { TimeRange.day(it, zone) })
-    ) { total, month, today -> HomeOverviews(total, month, today) }
+    private val overviews: Flow<HomeOverviews> = dayTicker.ticks().flatMapLatest {
+        combine(
+            observeOverview(allTimeRange),
+            observeOverview(rangeOf { TimeRange.month(it, zone) }),
+            observeOverview(rangeOf { TimeRange.day(it, zone) })
+        ) { total, month, today -> HomeOverviews(total, month, today) }
+    }
 
     /** 总额预算进度，用于首页预算卡；无总额预算时为 null（首页不展示预算卡） */
     private val budgetProgressFlow: Flow<BudgetProgress?> =
         observeBudgetProgress().map { list -> list.firstOrNull { it.budget.isTotalBudget } }
 
+    /**
+     * 流水列表的「今日 / 昨日」标签在**每次发射时**用 `LocalDate.now(zone)` 重算，
+     * 而 [overviews] 会在跨日时发射一次 → 日期标签与区间数字同时翻页，
+     * 不会再出现「列表已是新的一天、预算卡还停在昨天」。
+     */
     val uiState: StateFlow<HomeUiState> = combine(
         observeBills(allTimeRange),
         categoryRepository.observeAll(),
@@ -111,10 +123,9 @@ class HomeViewModel @Inject constructor(
         )
 
     /**
-     * 监听服务断连预警（M6 保活/异常排查）：
-     * 用户已开启自动采集（captureEnabled）但真实连接态（notificationListenerEnabled）为 false，
-     * 说明通知监听服务未真正运行（常见于重装 App 或厂商清理后台），可能在静默漏采。
-     * 由 [com.kai.bill.core.prefs.CaptureState] 提供真实连接态。
+     * 监听服务断连预警：用户已开启自动采集（captureEnabled）但真实连接态
+     * （notificationListenerEnabled）为 false，说明通知监听服务未真正运行
+     * （常见于重装 App 或厂商清理后台），可能在静默漏采。
      */
     val captureWarning: StateFlow<Boolean> = kaiPrefs.captureState
         .map { it.captureEnabled && !it.notificationListenerEnabled }
@@ -147,13 +158,9 @@ class HomeViewModel @Inject constructor(
                 var expense = 0L
                 var income = 0L
                 dayBills.forEach { bill ->
-                    if (bill.countInStats) {
-                        when (bill.type) {
-                            BillType.EXPENSE -> expense += bill.amountCents
-                            BillType.INCOME -> income += bill.amountCents
-                            BillType.TRANSFER -> { }
-                        }
-                    }
+                    // 退款是支出侧负项、不计收入：日汇总必须与上方概览同口径
+                    expense += bill.signedExpenseCents ?: 0L
+                    income += bill.signedIncomeCents ?: 0L
                 }
                 DailyGroup(
                     date = date,

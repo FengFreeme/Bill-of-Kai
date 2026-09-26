@@ -23,7 +23,6 @@ import com.kai.bill.domain.model.stats.Overview
  * 否则用普通文字色 —— 三列全彩会显得很吵，也削弱了红色的警示含义。
  *
  * @param overview 本区间概览
- * @param modifier 外部修饰符
  */
 @Composable
 fun StatsOverviewPanel(

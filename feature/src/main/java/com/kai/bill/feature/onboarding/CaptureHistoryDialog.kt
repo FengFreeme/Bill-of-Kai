@@ -138,11 +138,11 @@ fun CaptureHistoryDialog(
 }
 
 /**
- * 单条诊断：结果 + 时间 + 展开开关一行，原文在下；点击整行切换展开/收起。
+ * 单条诊断：结果 + 时间一行，「识别方式 + 展开」右对齐换行，原文在下；点击整行切换展开/收起。
  *
  * 展开必须**看得出变化**：通知原文通常只有一两行，如果只是把 `maxLines` 放开，
  * 短文本点下去和没点一样（真机上就是这么被反馈「没有反应」的）。
- * 所以折叠态只留 1 行，展开态额外补出完整时间与结果释义，且右上角标签始终翻转。
+ * 所以折叠态只留 1 行，展开态额外补出完整时间与结果释义，且右侧标签始终翻转。
  */
 @Composable
 private fun DiagnosticRow(
@@ -168,6 +168,8 @@ private fun DiagnosticRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        val method = extractRecognitionMethod(entry.raw)
+        // 结果 + 时间一行；「识别方式」与「展开」作为一组换行，整组右对齐
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -183,7 +185,19 @@ private fun DiagnosticRow(
                 style = AppTheme.typography.bodySmall,
                 color = AppTheme.color.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.weight(1f))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
+        ) {
+            if (method != null) {
+                Text(
+                    text = method,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.color.primary
+                )
+            }
             Text(
                 text = if (expanded) "收起 ▴" else "展开 ▾",
                 style = AppTheme.typography.bodySmall,
@@ -198,6 +212,13 @@ private fun DiagnosticRow(
             overflow = TextOverflow.Ellipsis
         )
         if (expanded) {
+            if (method != null) {
+                Text(
+                    text = "识别方式：$method",
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.color.onSurfaceVariant
+                )
+            }
             Text(
                 text = "完整时间：${formatDiagFullTime(entry.atMillis)}",
                 style = AppTheme.typography.bodySmall,
@@ -235,3 +256,14 @@ private fun formatDiagTime(millis: Long): String =
 /** 展开后的完整时间：在毫秒级精度之上补出年份，便于跨年回看。 */
 private fun formatDiagFullTime(millis: Long): String =
     if (millis <= 0L) "--" else SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.CHINA).format(Date(millis))
+
+/**
+ * 从诊断摘要里抽出「识别方式」（支付宝专属 / 微信专属 / 通用）。
+ *
+ * 写入格式见 `CategorySignalRecorder.withSummary`：`识别方式 微信专属 ｜ …`。
+ * 旧记录没有该字段时返回 null，列表不显示标签。
+ */
+internal fun extractRecognitionMethod(raw: String): String? =
+    RECOGNITION_METHOD.find(raw)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+
+private val RECOGNITION_METHOD = Regex("""识别方式\s+([^｜]+)""")

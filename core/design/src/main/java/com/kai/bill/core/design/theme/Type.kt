@@ -21,7 +21,7 @@ private val AppFontFamily = FontFamily.Default
  * 为什么必须开：金额列表里的数字如果按默认比例宽度渲染，
  * 不同行的小数点会对不齐，视觉上非常廉价。开启 tnum 后所有数字等宽。
  */
-// internal：component 包下的 AmountText 也要用它，private 只在同文件可见
+// NOTE: internal —— component 包下的 AmountText 也要用它，private 只在同文件可见
 internal const val TABULAR_NUMBERS = "tnum"
 
 val AppTypography = Typography(

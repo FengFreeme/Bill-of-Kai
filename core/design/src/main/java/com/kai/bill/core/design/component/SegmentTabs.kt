@@ -24,14 +24,7 @@ import com.kai.bill.core.design.theme.DarkMode
 /**
  * 通用分段切换器 —— 日/月/年筛选、统计维度切换都用它。
  *
- * 做成泛型而非写死「日/月/年」：这样账户维度、预算维度切换都能复用同一个组件。
- *
- * @param T 选项类型，通常是枚举
- * @param items 全部选项
- * @param selected 当前选中项
- * @param onSelect 选中回调
- * @param labelOf 把选项转成显示文本的函数
- * @param modifier 外部修饰符
+ * 做成泛型而非写死「日/月/年」：账户维度、预算维度切换都能复用同一个组件。
  */
 @Composable
 fun <T> SegmentTabs(

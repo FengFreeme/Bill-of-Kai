@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,7 +27,8 @@ import javax.inject.Singleton
 @Singleton
 class CaptureController @Inject constructor(
     @ApplicationContext private val context: Context,
-    kaiPrefs: KaiPrefs
+    kaiPrefs: KaiPrefs,
+    private val keepAlive: CaptureKeepAlive
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -34,14 +36,20 @@ class CaptureController @Inject constructor(
         kaiPrefs.captureState
             .map { it.captureEnabled }
             .distinctUntilChanged()
-            .onEach { enabled -> if (enabled) startService() else stopService() }
+            .onEach { enabled ->
+                if (enabled) {
+                    // 定期体检：进程被 ROM 清理后，靠它把服务与监听重新武装起来
+                    keepAlive.schedulePeriodicCheck()
+                    // 应用启动 / 用户开启时顺手体检一次：进程刚起来时通知监听往往还没绑上，
+                    // 这一步既完成重绑，也顺便把「链路到底通没通」判出来 ——
+                    // 用户刚打开应用，是发现采集已经停了的第一个好时机
+                    scope.launch { keepAlive.healthCheck() }
+                } else {
+                    keepAlive.cancelPeriodicCheck()
+                    stopService()
+                }
+            }
             .launchIn(scope)
-    }
-
-    private fun startService() {
-        runCatching {
-            context.startForegroundService(Intent(context, CaptureForegroundService::class.java))
-        }
     }
 
     private fun stopService() {

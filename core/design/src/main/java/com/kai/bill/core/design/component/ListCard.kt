@@ -19,12 +19,7 @@ private val LIST_CARD_RADIUS = 16.dp
 
 /**
  * 列表容器卡 —— 流水行、排行项、设置项。
- *
  * 基于 [GlassCard] 纯色表面，圆角略小于分组卡，适合密集列表。
- *
- * @param modifier 外部修饰符
- * @param onClick 可选点击
- * @param content 内容
  */
 @Composable
 fun ListCard(

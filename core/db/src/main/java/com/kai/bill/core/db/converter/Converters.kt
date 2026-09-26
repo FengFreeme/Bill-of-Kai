@@ -67,12 +67,6 @@ class Converters {
         value?.let { parseEnum(it, PendingReason.DIRECTION_UNKNOWN) }
 }
 
-/**
- * 把存储的枚举名还原为枚举；名字非法时返回 [fallback]。
- *
- * @param value 数据库中存的枚举名
- * @param fallback 解析失败时的兜底值
- * @return 解析出的枚举，或 [fallback]
- */
+/** 名字非法时返回 [fallback]，不抛异常 */
 private inline fun <reified T : Enum<T>> parseEnum(value: String, fallback: T): T =
     runCatching { enumValueOf<T>(value) }.getOrNull() ?: fallback

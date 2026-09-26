@@ -54,11 +54,9 @@ private const val CAUTION_AT = 0.5f
  * 颜色与长度都带动画：预算变化通常发生在「记一笔」之后，让进度与颜色一起滑过去，
  * 用户才能感知到「这一笔把进度推到了哪一档」。
  *
- * @param progress 进度，取值 0f~1f；超出范围会被自动钳制到边界
- * @param overBudget 是否超支。为 true 时直接钉到色阶末端（鲜红），
+ * @param progress 取值 0f~1f；超出会被自动钳制到边界
+ * @param overBudget 为 true 时直接钉到色阶末端（鲜红），
  *        保证「超支」永远是同一个最刺眼的颜色，不受进度数值抖动影响
- * @param height 进度条高度，默认 8dp
- * @param modifier 外部修饰符
  */
 @Composable
 fun KaiProgressBar(
@@ -67,15 +65,14 @@ fun KaiProgressBar(
     overBudget: Boolean = false,
     height: Dp = 8.dp
 ) {
-    // 深色模式下轨道若用 onSurface 会太亮，这里统一用极低透明度的前景色
+    // WHY: 深色模式下轨道若用 onSurface 会太亮，统一用极低透明度的前景色
     val trackColor = AppTheme.color.onSurface.copy(alpha = 0.08f)
 
-    // 预算变化通常是「记一笔账」之后，带动画能让用户感知到进度在动
     val animatedProgress by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         label = "budgetProgress"
     )
-    // 颜色跟着进度一起过渡：否则进度滑过去了、颜色是瞬间跳变的，会闪一下
+    // WHY: 颜色必须跟进度一起过渡，否则进度滑过去了颜色才跳变，会闪一下
     val targetColor = if (overBudget) {
         AppTheme.ext.alert
     } else {
@@ -109,11 +106,7 @@ fun KaiProgressBar(
 /**
  * 进度 → 填充色：`绿 →(50%) 琥珀 →(100%) 鲜红` 两段线性过渡。
  *
- * 分成两段而不是拿绿、红直接插值：RGB 上「绿→红」的中点是脏褐色，
- * 而预算用到一半时该是「琥珀/黄」，必须给中间档才能过渡得自然。
- *
- * @param progress 已钳制到 0f~1f 的进度
- * @return 该进度对应的填充色
+ * 分两段而非直接插值绿红：RGB 上「绿→红」的中点是脏褐色，用到一半应是「琥珀/黄」，需要中间档。
  */
 @Composable
 private fun progressFillColor(progress: Float): Color {

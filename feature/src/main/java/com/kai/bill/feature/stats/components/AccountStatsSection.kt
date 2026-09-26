@@ -24,7 +24,6 @@ import com.kai.bill.domain.model.stats.AccountStat
  * 这里不特殊处理、照常渲染 —— 把这部分金额藏起来会让统计对不上总数。
  *
  * @param stats 账户统计（按金额降序）
- * @param modifier 外部修饰符
  */
 @Composable
 fun AccountStatsSection(

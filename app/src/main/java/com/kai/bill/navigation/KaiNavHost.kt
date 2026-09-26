@@ -44,33 +44,17 @@ import com.kai.bill.feature.stats.CategoryDetailRoute
 import com.kai.bill.feature.stats.StatsRoute
 
 /**
- * 应用导航图：3 个 Tab 根 + 若干二级页。
+ * 应用导航图：3 个 Tab 根 + 若干二级页。各页都是无状态或自带 ViewModel 的 `*Route` 组合，
+ * NavHost 只负责串路由，不持有业务状态。
  *
- * 各页都是无状态或自带 ViewModel 的 `*Route` 组合，NavHost 只负责把路由串起来，
- * 不持有任何业务状态。
+ * 转场随背景配置切换（见 [slideComposable]）：无背景图用滑动盖住式（每页有不透明背景，旧页不透出）；
+ * 有背景图用交叉淡化（页面要透出根部背景图，滑动会让静止旧页透出来造成花屏）。
  *
- * 转场策略（见 [slideComposable]）随背景配置自动切换：
- * - **未设置背景图**：滑动盖住式（原体验）。每页有各自不透明背景，
- *   静止旧页不会透出，观感最利落；
- * - **已设置背景图**：淡入淡出。此时页面背景需要透出根部的背景图，
- *   滑动会让「静止旧页」透出来造成花屏，故改用交叉淡化。
- *
- * 背景策略：
- * - 无背景图：每页铺主题纯色背景（与改造前一致）；
- * - 有背景图：Tab 根页透明（透出根部全屏背景图，图像与底栏区域连续），
- *   二级页自铺整屏背景图以盖住常驻底栏。
- *
- * @param navController 导航控制器
- * @param tabBottomInset 系统区底部系统 inset（如导航手势条），叠加到 Tab 底栏预留高度上
- * @param backgroundPath 自定义背景图路径；null 表示纯色背景
- * @param notificationRoute 通知点击带来的目标路由；由 `MainActivity` 从 Intent 解析后传入，
- *        消费一次即由 [onNotificationRouteHandled] 清空（否则每次重组都会重新导航）
- * @param onNotificationRouteHandled 目标路由已被消费的回调
+ * @param tabBottomInset 系统区底部 inset（如导航手势条），叠加到 Tab 底栏预留高度上
+ * @param notificationRoute 通知点击带来的目标路由；消费一次即由 [onNotificationRouteHandled] 清空
+ *        （否则每次重组都会重新导航）
  * @param releaseNotesVersion 当前安装版本的公告版本号（null = 该版本无公告，设置页不显示入口）。
- *        版本号由 `MainActivity` 传进来，而不是让 `feature` 去读 `BuildConfig`：
- *        那样 `feature` 就得反向依赖 `app`，而公告本就是我们刻意留在 app 层的**应用级**职责
- * @param onReleaseNotesClick 设置页点了「更新公告」；由 `MainActivity` 弹出公告卡片
- * @param modifier 外部修饰符
+ *        由 `MainActivity` 传入而非让 `feature` 读 `BuildConfig`：否则 `feature` 会反向依赖 `app`
  */
 @Composable
 fun KaiNavHost(
@@ -85,7 +69,7 @@ fun KaiNavHost(
 ) {
     val tabBottomPad = KaiBottomBarHeight + tabBottomInset
 
-    // 点通知进入指定页面：`launchSingleTop` 保证用户已经在该页时不会叠出第二层
+    // NOTE: launchSingleTop 保证用户已在该页时不会叠出第二层
     LaunchedEffect(notificationRoute) {
         val target = notificationRoute ?: return@LaunchedEffect
         navController.navigate(target) { launchSingleTop = true }
@@ -254,8 +238,8 @@ private fun NavGraphBuilder.slideComposable(
                 fadeIn(animationSpec = FadeEnterSpec)
             }
         },
-        // 滑动模式：旧页静止，被滑入的新页盖住（新页背景不透明，不会透出）；
-        // 淡化模式：旧页同步淡出，避免「新页先出现、旧页内容才慢慢消失」。
+        // NOTE: 滑动模式旧页静止、被新页盖住（新页背景不透明）；淡化模式旧页同步淡出，
+        //       避免「新页先出现、旧页内容才慢慢消失」
         exitTransition = {
             if (useSlide) ExitTransition.None else fadeOut(animationSpec = FadeExitSpec)
         },
@@ -272,8 +256,7 @@ private fun NavGraphBuilder.slideComposable(
         },
         content = { entry ->
             val isTabRoot = contentBottomPadding > 0.dp
-            // Tab 根页必须为常驻底栏留出空间：**背景层与内容层都要避开这一段**。
-            // 若背景层铺满整屏，就会把下层常驻底栏盖住（曾导致底栏消失）。
+            // NOTE: Tab 根页的背景层与内容层都要为常驻底栏留空；背景层若铺满整屏会把底栏盖住
             val areaModifier = Modifier
                 .fillMaxSize()
                 .then(
@@ -286,10 +269,9 @@ private fun NavGraphBuilder.slideComposable(
                     .fillMaxSize()
                     .clipToBounds()
             ) {
-                // 无背景图：铺不透明主题背景（滑动转场要求各页不透明，才不会透出下层）；
-                // 有背景图：保持透明，统一透出根部那唯一一张全屏背景图。
-                // 若各页再自己画一次，绘制区域与根部不同（少了状态栏 inset），
-                // Crop 的缩放比例就会不一致，看起来像「照片被缩放」。
+                // NOTE: 无背景图铺不透明主题背景（滑动转场要求各页不透明）；有背景图则保持透明，
+                //       统一透出根部那张全屏背景图 —— 各页再自己画一次会因绘制区域不同（少了 inset）
+                //       导致 Crop 缩放比例不一致，看起来像「照片被缩放」
                 if (backgroundPath == null) {
                     Box(modifier = areaModifier.background(AppTheme.color.background))
                 }

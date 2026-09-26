@@ -25,7 +25,6 @@ import kotlin.math.max
  * 一眼能看出这周相对上几周是多了还是少了。
  *
  * @param bars 周桶，按时间升序（末位为锚定周）
- * @param modifier 外部修饰符
  */
 @Composable
 fun WeeklyBarChart(

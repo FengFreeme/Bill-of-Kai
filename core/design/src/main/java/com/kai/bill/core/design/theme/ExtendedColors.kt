@@ -18,9 +18,6 @@ import androidx.compose.ui.graphics.Color
  *
  * 访问方式统一走 [AppTheme.ext]，不要直接 new 一个实例。
  *
- * @property expense 支出金额色，珊瑚红
- * @property income 收入金额色，薄荷绿
- * @property neutral 转账 / 不计入统计的中性灰
  * @property alert 超支 / 警示色，鲜红（非珊瑚粉），用于预算超支提示与进度条告警
  */
 data class ExtendedColors(
@@ -54,25 +51,22 @@ val LocalExtendedColors = staticCompositionLocalOf { MintLightExtended }
  */
 object AppTheme {
 
-    /** 当前生效的 Material3 配色 */
     val color: ColorScheme
         @Composable
         @ReadOnlyComposable
         get() = MaterialTheme.colorScheme
 
-    /** 当前生效的排版 */
     val typography: Typography
         @Composable
         @ReadOnlyComposable
         get() = MaterialTheme.typography
 
-    /** 当前生效的形状（大圆角） */
     val shapes: Shapes
         @Composable
         @ReadOnlyComposable
         get() = MaterialTheme.shapes
 
-    /** 当前生效的业务扩展色 */
+    /** 业务扩展色 */
     val ext: ExtendedColors
         @Composable
         @ReadOnlyComposable

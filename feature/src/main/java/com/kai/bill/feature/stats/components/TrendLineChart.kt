@@ -35,20 +35,18 @@ import kotlin.math.ceil
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * 趋势折线图（自绘）。
  *
  * 把 [TrendPoint] 折成一条带面积填充的折线：年报按月、其余按日。
- * 与 [DonutChart] 同源，文字仍用 [rememberTextMeasurer] 量好再画，
- * 避免中文宽度估算偏差；金额统一用「元」（分 ÷ 100）入图。
+ * 文字用 [rememberTextMeasurer] 量好再画，避免中文宽度估算偏差；金额统一用「元」入图。
  *
- * 点按任意顶点即可选中：顶点放大高亮、向下拉一条虚线参考线，
- * 并在它的上方弹出该点的金额气泡；再次点按同一点（或点空白处）取消选中。
+ * 点按顶点即可选中：放大高亮 + 虚线参考线 + 金额气泡；再点同一点或空白处取消选中。
  *
  * @param points 趋势点（按时间升序）
  * @param monthly true 表示每个点是「一个月」—— 标签显示「9月」，否则「9/12」
- * @param modifier 外部修饰符
  */
 @Composable
 fun TrendLineChart(
@@ -196,11 +194,9 @@ fun TrendLineChart(
                 )
             }
 
-            // x 轴标签：最多约 6 个，避免拥挤
-            val step = (n / 6).coerceAtLeast(1)
-            points.forEachIndexed { i, p ->
-                if (i % step != 0 && i != n - 1) return@forEachIndexed
-                val label = formatAxisLabel(p.startMillis, monthly)
+            // x 轴标签：最多 6 个，按索引**均分**且首尾必取（原因见 axisTickIndices）
+            axisTickIndices(count = n, maxTicks = AXIS_MAX_TICKS).forEach { i ->
+                val label = formatAxisLabel(points[i].startMillis, monthly)
                 val layout = measurer.measure(
                     text = label,
                     style = TextStyle(color = labelColor, fontSize = 9.sp)
@@ -340,6 +336,27 @@ private fun trendGeometry(
         yTicks = yTicks,
         yLayouts = yLayouts
     )
+}
+
+/** x 轴最多画几个刻度（含首尾两个） */
+private const val AXIS_MAX_TICKS = 6
+
+/**
+ * x 轴刻度取哪些数据点的下标：按索引均分，且首尾必取。
+ *
+ * 不能写成「每 step 个取一个 + 末尾补一个」—— 末尾那个常紧贴前一个刻度
+ * （26 个点、step=4 时取到 24 与 25，只差约 4% 图宽），两个日期标签会叠字。
+ *
+ * @param maxTicks 最多几个刻度（含首尾）；点数不足时全部画出
+ */
+internal fun axisTickIndices(count: Int, maxTicks: Int = AXIS_MAX_TICKS): List<Int> {
+    if (count <= 0) return emptyList()
+    if (count <= maxTicks) return (0 until count).toList()
+    val last = count - 1
+    val span = maxTicks - 1
+    return (0 until maxTicks)
+        .map { k -> (k.toFloat() * last / span).roundToInt() }
+        .distinct()
 }
 
 private fun formatAxisLabel(startMillis: Long, monthly: Boolean): String {

@@ -25,14 +25,11 @@ import com.kai.bill.core.design.theme.DarkMode
 /**
  * 分类标签：左侧色点 + 分类名。
  *
- * 铁律 3：只接收 [Color] 与 [String]，不认识 `Category` 领域模型。
- * 分类实体里的颜色是十六进制字符串，由 `feature` 层转换后传入。
+ * 只接收 [Color] 与 [String]，不认识 `Category` 领域模型；分类实体里的颜色是十六进制字符串，
+ * 由 `feature` 层转换后传入。
  *
- * @param label 分类名
- * @param dotColor 分类色点的颜色
- * @param selected 是否选中，选中时加一圈主色描边
- * @param onClick 点击回调；为 null 时不可点击
- * @param modifier 外部修饰符
+ * @param selected 选中时加一圈主色描边
+ * @param onClick 为 null 时不可点击
  */
 @Composable
 fun CategoryChip(

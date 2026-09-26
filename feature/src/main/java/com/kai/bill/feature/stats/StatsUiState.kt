@@ -28,25 +28,17 @@ data class WeeklyBar(
 /**
  * 统计页 UI 状态。
  *
- * M2：从 M0 的「只有一个粒度」扩展为完整统计状态。
- *
  * 数据来源分成两组，**受不同的条件影响**：
  * - 统计类（[overview] / [categoryStats] / [trendPoints] / [accountStats]）：
  *   受 [rangeKind]、[statType] 与 [filter] 共同影响。无筛选时走 `StatsDao` 的 SQL 聚合，
  *   带筛选时改走明细的内存聚合（多选筛选无法用静态 SQL 优雅表达），两者口径一致。
  * - [bills]：受 [rangeKind] 与 [filter] 影响，走 `BillRepository.observeBills`。
  *
- * @property rangeKind 当前时间粒度（日 / 周 / 月 / 年）
- * @property selectedDate 当前粒度下的锚定日期（毫秒），用于计算具体区间
  * @property statType 统计维度：支出或收入；决定饼图与趋势统计哪一侧
- * @property categoryStatsMode 分类统计聚合维度：主分类 / 子分类
- * @property overview 本区间支出 / 收入 / 结余
  * @property categoryStats 分类统计，按金额降序，供饼图与排行共用
  * @property trendPoints 趋势点；年按月、日/周/月按日聚合
- * @property weeklyBars 周支出对比柱状图数据
  * @property accountStats 账户维度统计，含「未指定账户」兜底项
  * @property filter 当前筛选条件；null 表示不筛选
- * @property bills 筛选后的流水明细
  */
 data class StatsUiState(
     val rangeKind: DateRangeKind = DateRangeKind.MONTH,

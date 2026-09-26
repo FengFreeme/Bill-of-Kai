@@ -29,7 +29,6 @@ import javax.inject.Inject
  * 背景图处理：把用户选中的图片**复制进 App 私有目录**再存路径，而不是直接存
  * content:// URI —— URI 的读取授权可能在设备重启后失效，复制后一劳永逸。
  *
- * @property prefs 配置读写入口
  * @property context 应用上下文，用于读取图片与访问私有目录
  */
 @HiltViewModel

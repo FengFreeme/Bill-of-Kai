@@ -293,6 +293,16 @@ class SignalReconcilerTest {
     }
 
     @Test
+    fun `没定出分类时也带回账单id-供卡片让用户现场选`() = runBlocking {
+        billRepository.seed(bill(amountCents = 2830L, categoryId = 12L))
+
+        val result = reconcileResult(signal(amountCents = 2830L, text = "支付成功", packageName = null))
+
+        assertEquals(ReconcileOutcome.NO_MATCH, result.outcome)
+        assertEquals(billRepository.saved.single().id, result.reviewBillId)
+    }
+
+    @Test
     fun `多候选放弃时不弹卡片-没有可改可撤的账单`() = runBlocking {
         billRepository.seed(bill(amountCents = 2830L, categoryId = 12L))
         billRepository.seed(bill(amountCents = 2830L, categoryId = 12L))
@@ -415,6 +425,19 @@ class SignalReconcilerTest {
                 it.tradeTimeMillis in startMillis..endMillis && it.source != SourceType.MANUAL
             }
         }
+
+        /**
+         * 回溯窗口不是接口契约的一部分（它是 `BillRepositoryImpl` 的启发式细节），
+         * 因此这里只实现「同金额 + 早于退款 + 最近一笔」这条**契约**，
+         * 不模拟窗口大小 —— 窗口行为由实现层自己保证。
+         */
+        override suspend fun findRefundTarget(amountCents: Long, refundTimeMillis: Long): Bill? =
+            saved.filter {
+                it.amountCents == amountCents &&
+                    it.type == BillType.EXPENSE &&
+                    !it.isRefund &&
+                    it.tradeTimeMillis <= refundTimeMillis
+            }.maxByOrNull { it.tradeTimeMillis }
 
         override suspend fun deleteById(id: Long) {
             saved.removeAll { it.id == id }

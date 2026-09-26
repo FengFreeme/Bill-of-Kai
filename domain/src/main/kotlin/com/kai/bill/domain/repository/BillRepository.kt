@@ -94,6 +94,17 @@ interface BillRepository {
     suspend fun findAutoBillsInWindow(startMillis: Long, endMillis: Long): List<Bill>
 
     /**
+     * 回溯「这笔退款冲抵的是哪笔支出」：退款必须退回原月份与原分类，否则两边的数都不对。
+     *
+     * 匹配是启发式的（实现按「同金额 + 早于退款 + 最近一笔」在有限窗口内回溯），
+     * 窗口与算法都留在实现层；将来若能解析出订单号，换算法不必改调用方。
+     *
+     * @param refundTimeMillis 退款发生时间（毫秒）；只回溯早于它的支出
+     * @return 命中的原支出；没有则返回 null（调用方退回「按退款自身归属」）
+     */
+    suspend fun findRefundTarget(amountCents: Long, refundTimeMillis: Long): Bill?
+
+    /**
      * 按主键删除一笔账单。
      *
      * @param id 账单主键

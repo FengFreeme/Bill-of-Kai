@@ -39,7 +39,6 @@ import androidx.compose.material3.ColorScheme
  * @param selectedPalette 当前选中的配色
  * @param selectedDarkMode 当前选中的深浅模式
  * @param onSelect 选中某格（同时回传配色与模式）
- * @param modifier 外部修饰符
  */
 @Composable
 fun ThemePalettePicker(

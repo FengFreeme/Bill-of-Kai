@@ -85,25 +85,12 @@ private const val SUB_GRID_REVEAL_DELAY_MILLIS = 320L
 /**
  * 记一笔页面（新增 / 编辑复用）。
  *
- * 自上而下：顶栏 → 类型切换 → 金额区（含交易日期）→ 分类九宫格 → 账户选择 → 备注 → 数字键盘；
- * 页面底部固定「保存 / 取消」操作栏（独立于数字键盘，常驻可见）。
- *
- * @param uiState 记一笔状态
- * @param onTypeChange 类型切换
- * @param onDigit 数字键盘输入
- * @param onDelete 数字键盘删除
  * @param onCategorySelect 分类选择（二级或无子分类的一级）
  * @param onParentClick 点击一级：选中并切换展开/收起
  * @param onManageCategory 从分类面板跳分类管理补子分类；入参是「＋」所在的一级分类 id
- * @param onAccountSelect 账户选择
- * @param onNoteChange 备注变更
  * @param onDateTimeSelect 选择交易日期时间（精确到分）
- * @param onSave 保存
  * @param onCancel 取消（放弃改动并返回）
  * @param onDeleteBill 删除（仅编辑态可用）
- * @param onClearError 清除错误提示
- * @param onBack 返回
- * @param modifier 外部修饰符
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,12 +119,10 @@ fun RecordScreen(
     var keypadVisible by remember { mutableStateOf(false) }
     // 首帧只画顶栏+金额，分类网格/账户选择等数据到位后再挂，避免进入页时与滑动抢同一帧
     var heavyReady by remember { mutableStateOf(false) }
-    // 转账是第三种类型：模型 / 预置分类（19 转账、20 还款）/ 统计排除口径都已支持，
-    // 之前只是没在类型切换器里放出来，等于用户根本记不了转账
+    // 转账是第三种类型：模型 / 预置分类 / 统计排除口径都已支持，这里补上类型切换器入口
     val typeTabs = remember { listOf(BillType.EXPENSE, BillType.INCOME, BillType.TRANSFER) }
 
     val zone = remember { ZoneId.systemDefault() }
-    // 交易日期时间（年月日 + 时分），随选择的交易时间变化
     val tradeDateTime = remember(uiState.tradeTimeMillis) {
         Instant.ofEpochMilli(uiState.tradeTimeMillis).atZone(zone).toLocalDateTime()
     }
@@ -148,11 +133,9 @@ fun RecordScreen(
         "%02d:%02d".format(tradeDateTime.hour, tradeDateTime.minute)
     }
 
-    // 分类数据到位后就挂载重内容。
-    // 若数据未到就挂载：categories 为空会先落到「暂无分类」提示（很矮），
-    // 数据到达后又变成网格（很高），备注框被顶上顶下两次 —— 这就是「闪一下」的来源。
-    // 只看分类树：账户允许为空，把它也当条件会在「无账户」时永远等不到，
-    // 只能靠下面的兜底超时，白白多等一截。
+    // 分类数据到位后再挂重内容：数据未到就挂会先渲染「暂无分类」（很矮），到达后变网格（很高），
+    // 备注框被顶上顶下两次，就是「闪一下」的来源。
+    // 只看分类树：账户允许为空，把它当条件会在「无账户」时永远等不到，只能靠兜底超时。
     LaunchedEffect(uiState.categoryTree) {
         if (uiState.categoryTree.isNotEmpty()) {
             yield()
@@ -167,8 +150,7 @@ fun RecordScreen(
         heavyReady = true
     }
 
-    // 二级分类等页面转场走完再展开：转场中同时展开两层动画会互相干扰。
-    // 一级网格照常先出现（它由数据驱动），只是「展开子级」这一步往后挪。
+    // 二级分类等页面转场走完再展开，避免两层动画互相干扰；一级网格照常先出现。
     var revealSubGrid by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(SUB_GRID_REVEAL_DELAY_MILLIS)
@@ -277,7 +259,6 @@ fun RecordScreen(
                             AppTheme.color.onSurfaceVariant
                         }
                     )
-                    // 交易日期时间：日期与时分分别可点，点击或点键盘日历键都能修改
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -424,9 +405,8 @@ fun RecordScreen(
             }
         }
 
-        // 数字键盘：在底部操作栏上方滑入 / 滑出
-        // 注：不使用带 elevation 的 Surface，避免滑动动画时阴影逐帧重算造成卡顿；
-        // 同时使用 expand/shrink 让键盘高度与页面布局同步变化，避免 slide 时留下覆盖区域。
+        // 键盘在底部操作栏上方滑入 / 滑出。不用带 elevation 的 Surface（滑动时阴影逐帧重算会卡顿）；
+        // 配合 expand/shrink 让高度与布局同步变化，避免 slide 留下覆盖区域。
         AnimatedVisibility(
             visible = keypadVisible,
             enter = slideInVertically(
@@ -458,8 +438,7 @@ fun RecordScreen(
             }
         }
 
-        // 底部操作栏：取消 / 保存，常驻页面底部（即其"原位置"），键盘在其上方滑入滑出；
-        // 收起时操作栏保持原位、不随键盘一起消失
+        // 底部操作栏常驻页面底部，键盘在其上方滑入滑出，收起时不随键盘消失。
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = AppTheme.color.surface,
@@ -473,7 +452,6 @@ fun RecordScreen(
                     .navigationBarsPadding(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // 取消：放弃改动并返回
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -489,7 +467,6 @@ fun RecordScreen(
                         color = AppTheme.color.onSurface
                     )
                 }
-                // 保存
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -637,13 +614,10 @@ private fun HintText(text: String) {
 }
 
 /**
- * 记一笔的路由，负责接上 ViewModel 与导航回调。
+ * 记一笔的路由。
  *
  * @param billId 编辑目标账单 ID；0 表示新增
- * @param onClose 保存/删除成功后关闭页面
  * @param onManageCategory 跳分类管理补子分类；入参是「＋」所在的一级分类 id
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun RecordRoute(

@@ -55,7 +55,6 @@ import com.kai.bill.domain.model.SourceType
  * @param onAcceptAll 全部接受（只处理有建议的条目）
  * @param onClearError 清除错误提示
  * @param onBack 返回
- * @param modifier 外部修饰符
  */
 @Composable
 fun NeedsReviewScreen(

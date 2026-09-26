@@ -19,11 +19,10 @@ import java.math.BigDecimal
 import javax.inject.Inject
 
 /**
- * 预算页 ViewModel：同时负责
- * - 设置表单的读写（月预算 / 弹性·固定日预算 / 启用开关），落库走 [SaveBudgetUseCase]
- * - 进度展示（由 [ObserveBudgetProgressUseCase] 组合的月 / 日进度与超支判定）
+ * 预算页 ViewModel：设置表单读写（月预算 / 弹性·固定日预算 / 启用开关，落库走 [SaveBudgetUseCase]）
+ * 与进度展示（由 [ObserveBudgetProgressUseCase] 组合的月 / 日进度与超支判定）。
  *
- * M3 只支持「总额预算」（[Budget.categoryId] 为 null）；分类预算字段已预留但不在本页暴露。
+ * 只支持「总额预算」（[Budget.categoryId] 为 null）；分类预算字段已预留但不在本页暴露。
  */
 @HiltViewModel
 class BudgetViewModel @Inject constructor(

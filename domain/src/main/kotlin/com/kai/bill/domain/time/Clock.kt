@@ -17,8 +17,6 @@ fun interface Clock {
 
 /**
  * 固定时钟，仅供测试使用。
- *
- * @param fixedMillis 固定返回的毫秒时间戳
  */
 class FixedClock(private val fixedMillis: Long) : Clock {
     override fun nowMillis(): Long = fixedMillis

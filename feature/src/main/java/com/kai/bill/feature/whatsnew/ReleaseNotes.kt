@@ -43,6 +43,26 @@ object ReleaseNotes {
 
     val entries: List<ReleaseNote> = listOf(
         ReleaseNote(
+            version = "1.3.0",
+            lead = "这一版重点在「少记错」：几条容易被当成账单的消息挡在了门外，分类识别在微信里也能跑起来了。",
+            sections = listOf(
+                ReleaseNoteSection(
+                    heading = "修复",
+                    items = listOf(
+                        "广告短信 / 营销通知被误记成账单：优惠预告、活动提醒这类带金额的文案不再入账",
+                        "微信里分类识别无法运行：账单详情页打开后停留一下就能识别，并给已有账单补上分类",
+                        "普通消息被误记成账单：聊天、群通知、系统提醒不再被当成一笔消费"
+                    )
+                ),
+                ReleaseNoteSection(
+                    heading = "新增",
+                    items = listOf(
+                        "新装首次打开会弹一张上手卡片：该开哪些权限、开完怎么用（改分类、撤销、漏记自查）一次说清"
+                    )
+                )
+            )
+        ),
+        ReleaseNote(
             version = "1.2.0",
             lead = "这次的重点是把分类认准，并且让每一次自动记账都看得见、改得动。",
             sections = listOf(

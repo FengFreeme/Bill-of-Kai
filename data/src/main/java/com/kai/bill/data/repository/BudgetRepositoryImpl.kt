@@ -9,12 +9,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * [BudgetRepository] 的 Room 实现。
- *
- * 注入 [BudgetDao]，通过 [BudgetMapper] 完成 Entity ⇄ Domain 转换；
- * 自身不持有任何业务逻辑，纯转发 + 映射。
- */
 @Singleton
 class BudgetRepositoryImpl @Inject constructor(
     private val budgetDao: BudgetDao

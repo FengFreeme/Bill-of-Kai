@@ -42,7 +42,8 @@ class ObserveAccountStatsUseCase @Inject constructor(
 
         return combine(amounts, accountRepository.observeAll()) { raw, accounts ->
             val accountById = accounts.associateBy { it.id }
-            val totalCents = raw.sumOf { it.amountCents }
+            // 分母取绝对值之和：退款落到某个账户上时那一项是负值（见 `StatsRatio.ratioOf`）
+            val ratioTotalCents = absoluteTotalOf(raw.map { it.amountCents })
             raw.map { amount ->
                 val account = amount.accountId?.let { accountById[it] }
                 AccountStat(
@@ -53,7 +54,7 @@ class ObserveAccountStatsUseCase @Inject constructor(
                         else -> account.name
                     },
                     amountCents = amount.amountCents,
-                    ratio = ratioOf(amount.amountCents, totalCents)
+                    ratio = ratioOf(amount.amountCents, ratioTotalCents)
                 )
             }
         }

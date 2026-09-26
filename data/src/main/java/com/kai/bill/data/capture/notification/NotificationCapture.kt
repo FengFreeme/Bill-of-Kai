@@ -59,7 +59,10 @@ class NotificationCapture @Inject constructor(
                     runCatching {
                         kaiPrefs.recordCaptureDiagnostic(
                             result = "REPLAY",
-                            raw = event.rawText,
+                            raw = NotificationDiagnosticText.withChannelSummary(
+                                event.packageName,
+                                event.rawText
+                            ),
                             atMillis = event.postedAtMillis
                         )
                     }
@@ -99,7 +102,11 @@ class NotificationCapture @Inject constructor(
                         // 记进去只会把真正要看的记录顶掉
                         kaiPrefs.recordCaptureDiagnostic(
                             result = code,
-                            raw = event.rawText,
+                            // 与识别记录同格式的渠道前缀：列表右侧的「微信专属 / 银行专属…」标签由它驱动
+                            raw = NotificationDiagnosticText.withChannelSummary(
+                                event.packageName,
+                                event.rawText
+                            ),
                             atMillis = event.postedAtMillis
                         )
                     } else {

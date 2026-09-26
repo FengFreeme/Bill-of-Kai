@@ -1,10 +1,8 @@
 package com.kai.bill.core.common.overlay
 
 /**
- * 提示条的结论类型。
- *
- * 只收「**本来完全没有反馈**」的结果（见下），因此取值刻意很少：
- * 新建 / 补分类已经有确认卡片（[ReviewCardOverlay]），再来一条提示条是重复打扰。
+ * 只收「本来完全没有反馈」的结果，因此取值刻意很少：
+ * 新建 / 补分类已有确认卡片（[ReviewCardOverlay]），再来一条提示条是重复打扰。
  */
 enum class CaptureHintKind {
 
@@ -26,14 +24,24 @@ enum class CaptureHintKind {
  *
  * 只带**语义字段**，文案由 UI 层拼 —— `data` 层不该出现给用户看的句子。
  *
- * @property kind 结论类型
  * @property amountCents 识别到的金额（分）；没抽到金额时为 null。
- *         [CaptureHintKind.ALREADY_RECORDED] 用不到它（那句话里不该出现金额：
- *         「已记录」是结论，再报一遍金额会让人以为又记了一笔）
+ *         [CaptureHintKind.ALREADY_RECORDED] 不展示它（那句话里不该出现金额：
+ *         「已记录」是结论，再报一遍金额会让人以为又记了一笔），
+ *         但**金额仍要传**，它是「这一笔是哪一笔」的身份之一（见 [key]）
+ * @property key 去重身份：**这条提示说的是哪一页 / 哪一笔**。
+ *
+ *         用它而不是用 [kind] + [amountCents] 判重，是因为那两者**不足以区分不同账单**：
+ *         「已记录」按设计不带金额，签名退化成一个常量，于是 10 秒内切换两笔**不同的**
+ *         重复账单时，第二笔会被当成「与上一条相同」而不再提示 —— 用户看到的就是
+ *         「有时候有提示条、有时候没有」（真机反馈原话）。
+ *
+ *         调用方传能让「同一页」稳定的标识（如包名 + 页面文本），
+ *         null 时退回用 [kind] + [amountCents]（仅供不关心身份的调用方，如测试入口）。
  */
 data class CaptureHint(
     val kind: CaptureHintKind,
-    val amountCents: Long? = null
+    val amountCents: Long? = null,
+    val key: String? = null
 )
 
 /**
@@ -63,8 +71,8 @@ interface CaptureHintOverlay {
      * 显示一条提示；已有提示会被替换。若此刻正显示确认卡片，实现应**放弃显示提示**，
      * 避免把用户正在操作的卡片顶掉（卡片优先级更高）。
      *
-     * @param hint 提示内容
-     * @return true 表示提示条已显示在屏幕上
+     * 实现应保证「**同一件事**短时间内不重复弹」，但「不同的两笔」必须各弹各的 ——
+     * 判重身份取 [CaptureHint.key]，不要用 `kind` / `amountCents` 顶替（理由见该字段）。
      */
     suspend fun show(hint: CaptureHint): Boolean
 

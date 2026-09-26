@@ -23,11 +23,8 @@ private val PRIMARY_CARD_RADIUS = 28.dp
 /**
  * 主卡 —— 累计消费等 L1 聚合指标容器。
  *
- * 主题色纯色填充 + 大圆角，无渐变、无阴影、无描边（边缘对齐 [CtaButton]）。
- * 只认识 Color / Dp / 内容 slot，不认识任何领域模型。
- *
- * @param modifier 外部修饰符
- * @param content 卡片内容（文字通常用 [AppTheme.color.onPrimary]）
+ * 主题色纯色填充 + 大圆角，无渐变 / 阴影 / 描边（边缘对齐 [CtaButton]）；
+ * 只认识 Color / Dp / 内容 slot，不认识领域模型。
  */
 @Composable
 fun PrimaryCard(

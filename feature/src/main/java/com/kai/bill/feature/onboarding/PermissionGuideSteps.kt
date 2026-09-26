@@ -25,10 +25,6 @@ enum class GuideAction {
 /**
  * 单条引导步骤。
  *
- * @param id 稳定标识，作为 Compose 列表 key
- * @param title 步骤标题
- * @param description 引导说明（含「为什么需要」）
- * @param action 点击触发的具体动作
  * @param essential 是否必达项：true 表示不完成则通知采集不可用
  */
 data class GuideStep(
@@ -38,6 +34,7 @@ data class GuideStep(
     val action: GuideAction,
     val essential: Boolean
 )
+
 
 /**
  * 分厂商引导步骤。
@@ -83,7 +80,15 @@ object PermissionGuideSteps {
                 GuideStep(
                     id = "autostart",
                     title = "允许自启动 / 后台运行",
-                    description = "在厂商设置里把本 App 设为允许自启动、允许后台运行，避免通知监听被杀。",
+                    description = buildString {
+                        append("在厂商设置里把本 App 设为允许自启动、允许后台运行，避免通知监听被杀。")
+                        // vivo 是唯一会把「灭屏长待」单独再清一遍的 ROM：光开自启动不够，
+                        // 后台高耗电与最近任务锁定这两步不做，过夜之后大概率还是会被清掉
+                        if (rom == Rom.VIVO) {
+                            append("vivo 还需两步：① 系统设置 → 电池 → 后台高耗电 → 允许；")
+                            append("② 从最近任务里下拉本应用卡片点「锁定」。")
+                        }
+                    },
                     action = GuideAction.AUTO_START,
                     essential = false
                 )
@@ -99,4 +104,5 @@ object PermissionGuideSteps {
             )
         )
     }
+
 }

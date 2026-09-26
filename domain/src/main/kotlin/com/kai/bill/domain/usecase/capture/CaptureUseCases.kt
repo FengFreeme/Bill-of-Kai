@@ -13,10 +13,10 @@ class CaptureUseCases {
     fun observeCaptureAlive(): Flow<Boolean> = flowOf(false)
 
     fun startCapture() {
-        // M4：拉起 CaptureForegroundService / 校验通知使用权
+        // TODO: M4 拉起 CaptureForegroundService / 校验通知使用权
     }
 
     fun stopCapture() {
-        // M4：停止保活服务（不保证系统不杀后台）
+        // TODO: M4 停止保活服务（不保证系统不杀后台）
     }
 }

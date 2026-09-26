@@ -33,10 +33,7 @@ import com.kai.bill.core.design.theme.DarkMode
 import com.kai.bill.feature.common.SectionTitle
 
 /**
- * 设置页：入口聚合。
- *
- * M0 外观可点；其余入口跳转占位二级页，方便对齐文档路由树。
- * 本页无状态、无 ViewModel：只做入口聚合。
+ * 设置页：入口聚合。无状态、无 ViewModel。
  *
  * @param releaseNotesVersion 当前安装版本的公告版本号（即 `versionName`）；
  *   null 表示这个版本还没有公告文案，此时**不显示该入口** ——

@@ -36,12 +36,8 @@ import javax.inject.Inject
 /**
  * 记一笔 ViewModel。
  *
- * 负责金额键盘输入、分类 / 账户选择、交易日期选择、保存（新增走 [RecordBillUseCase]、
- * 编辑走 [UpdateBillUseCase]）与删除（[DeleteBillUseCase]）。编辑态通过 [load] 传入
- * [billId]，从 [BillRepository.observeById] 拉取原账单回填。
- *
- * 业务组装（dedupHash、source、记录时间、编辑时保留交易时间）下沉到 UseCase；
- * 本类只收集 UI 输入并转发。一次性关闭走 [events]，不放进 [uiState]。
+ * 业务组装（dedupHash、source、记录时间、编辑时保留交易时间）下沉到 UseCase，
+ * 本类只收集 UI 输入并转发；一次性关闭走 [events]，不放进 [uiState]。
  *
  * 账户允许为空：用户未指定账户（或尚无账户）时也能保存。
  */
@@ -83,8 +79,7 @@ class RecordViewModel @Inject constructor(
     }
     private val accounts = accountRepository.observeActive()
 
-    // 拆成两层 combine，避开 6+ Flow 的 typed overload 限制：
-    // 第一层合出不可由日期影响的文本快照，第二层再并入 countInStats 与 tradeTimeMillis。
+    // 拆两层 combine 以避开 6+ Flow 的 typed overload 限制。
     private val formState = combine(
         combine(type, amountText, categoryId, accountId, note) { t, amt, catId, accId, nt ->
             FormSnapshot(t, amt, catId, accId, nt)
@@ -149,11 +144,8 @@ class RecordViewModel @Inject constructor(
         viewModelScope.launch {
             accounts.collect { list ->
                 if (accountId.value == null && list.isNotEmpty()) {
-                    // 默认选中「支付宝」而非排序第一个：
-                    // 预置账户按 sortOrder 排序时现金在最前，但现金已很少使用，
-                    // 每次记账都要手动改一次很烦。找不到支付宝时再退回第一个。
-                    // 注意这里改的是选中逻辑而非预置数据的排序号 ——
-                    // 改排序号对已安装的用户不生效（预置数据只在首次播种时写入）。
+                    // 默认选中「支付宝」而非排序第一个（现金已很少用），找不到则退回第一个。
+                    // 只改选中逻辑、不改预置排序号 —— 后者对已安装用户不生效（预置数据仅首次播种写入）。
                     accountId.value = (
                         list.firstOrNull { it.type == AccountType.ALIPAY } ?: list.first()
                         ).id
@@ -193,11 +185,9 @@ class RecordViewModel @Inject constructor(
     }
 
     /**
-     * 键盘输入：[digit] 既可能是数字 / 小数点，也可能是 `+` / `-` 运算符。
+     * 键盘输入：[digit] 可能是数字 / 小数点，也可能是 `+` / `-` 运算符（算式求值见 [AmountExpression]）。
      *
-     * 支持「12+8」这类加减算式（求值见 [AmountExpression]）：金额显示区实时显示求和结果，
-     * 用户不必自己先算好再输。小数位限制只作用于**当前这一项**——
-     * 不能拿整串判断，否则「12.34+5」之后就再也输不进小数了。
+     * 小数位限制只作用于**当前项**，不能拿整串判断，否则「12.34+5」之后再输不进小数。
      */
     fun onDigit(digit: String) {
         val cur = amountText.value
@@ -215,13 +205,7 @@ class RecordViewModel @Inject constructor(
         amountText.value = cur.dropLast(term.length) + newTerm
     }
 
-    /**
-     * 追加运算符。
-     *
-     * - 空串不加：算式不能以运算符开头；
-     * - 末尾已是指向别的运算符时**替换**，避免拼出「12+-」；
-     * - 末项以小数点结尾时补个 0（「12.」→「12.0+」），保证每项都合法。
-     */
+    /** 追加运算符：空串不加、末尾换符则替换（避免「12+-」）、末项以小数点结尾时补 0。 */
     private fun appendOperator(cur: String, op: String): String = when {
         cur.isEmpty() -> cur
         cur.last() == '+' || cur.last() == '-' -> cur.dropLast(1) + op
@@ -238,10 +222,6 @@ class RecordViewModel @Inject constructor(
         categoryId.value = id
     }
 
-    /**
-     * 点击一级分类：选中它，并在有子分类时切换展开/收起。
-     * 再次点击已展开的一级会收回其二级网格。
-     */
     fun onParentClick(parentId: Long) {
         categoryId.value = parentId
         expandedParentId.value = if (expandedParentId.value == parentId) null else parentId
@@ -259,11 +239,7 @@ class RecordViewModel @Inject constructor(
         countInStats.value = value
     }
 
-    /**
-     * 选择交易日期时间（精确到分）。
-     *
-     * 直接采用所选年月日与时分，不做归零；新增态默认即为「现在」的当前时分。
-     */
+    /** 选择交易日期时间（精确到分），直接采用所选值、不归零。 */
     fun onDateTimeSelected(dateTime: LocalDateTime) {
         val zone = ZoneId.systemDefault()
         tradeTimeMillis.value = dateTime.atZone(zone).toInstant().toEpochMilli()

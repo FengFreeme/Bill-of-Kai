@@ -4,7 +4,7 @@ import com.kai.bill.domain.model.Budget
 import com.kai.bill.domain.repository.BudgetRepository
 import javax.inject.Inject
 
-/** 保存预算配置。M3 落地。 */
+/** 保存预算配置。 */
 class SaveBudgetUseCase @Inject constructor(
     private val budgetRepository: BudgetRepository
 ) {

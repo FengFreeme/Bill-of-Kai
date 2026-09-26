@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -58,11 +60,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 确认卡片的 **Activity 版本**（路由）。
- *
- * 用在「点通知进来」这条路径上：用户点通知属于前台操作，启动 Activity 不受任何限制。
- * 而**自动弹出**那条路径不走这里 —— 它由无障碍悬浮层承载（见 `ReviewCardOverlay`），
- * 因为后台启动 Activity 的官方豁免里没有「无障碍服务」这一条。
+ * 确认卡片的 **Activity 版本**（路由），只用于「点通知进来」这条路径：点通知属于前台操作，
+ * 启动 Activity 不受限制；**自动弹出**那条走无障碍悬浮层（后台拉 Activity 会被静默拦截）。
  *
  * @param billId 要展示的账单主键
  * @param reason 这笔的来由（新建 / 补分类），决定卡片文案
@@ -95,24 +94,16 @@ fun ReviewCardRoute(
 }
 
 /**
- * 确认卡片的**内容**。
+ * 确认卡片的**内容**，由两个宿主共用（`ReviewCardRoute` 的 Activity 版与 `OverlayCaptureHost`
+ * 的悬浮层版），保证两条路径长得一模一样。
  *
- * 两个宿主共用它，保证「自动弹出的悬浮卡片」与「点通知打开的页面」长得一模一样：
- * - `ReviewCardRoute`（Activity）
- * - `OverlayCaptureHost`（无障碍悬浮层）
- *
- * 数据靠参数传入而不自己取：悬浮层的宿主是我们自建的 `OverlayViewOwner`
- * （只有 `LifecycleOwner` + `SavedStateRegistryOwner` + `ViewModelStoreOwner` 三个空壳），
- * **拿不到 Hilt 的 ViewModel 工厂**，`hiltViewModel()` 在那里会直接失败；
- * 统一由宿主把分类树与落库动作喂进来，两个宿主才走同一条路。
+ * 数据靠参数传入而不自己取：悬浮层的 `OverlayViewOwner` 只有三个 owner 空壳，**拿不到 Hilt 的
+ * ViewModel 工厂**（`hiltViewModel()` 在那里会直接失败），因此统一由宿主把数据与落库动作喂进来。
  *
  * @param bill 待展示账单；null 表示尚未载入（此时只铺一层遮罩）
  * @param reason 这笔的来由（新建 / 补分类）；标题与结尾说明都按它取文案
- * @param categoryName 已解析好的分类名
  * @param categoryTree 当前账单类型下的两级分类，供卡片内弹出的选择器使用
- * @param onDismiss 点卡片外区域 / 关闭
  * @param onSelectCategory 选中新分类；宿主负责落库，卡片本地先乐观更新显示
- * @param onRevoke 撤销这一笔
  */
 @Composable
 fun ReviewCardContent(
@@ -225,6 +216,7 @@ fun ReviewCardContent(
                     text = when (reason) {
                         ReviewCardReason.CREATED -> "已记一笔 · ${bill.source.reviewSourceLabel()}"
                         ReviewCardReason.ENRICHED -> "已补充分类 · ${bill.source.reviewSourceLabel()}"
+                        ReviewCardReason.NO_MATCH -> "还没分类 · ${bill.source.reviewSourceLabel()}"
                     },
                     style = AppTheme.typography.bodySmall,
                     color = AppTheme.color.onSurfaceVariant
@@ -264,6 +256,10 @@ fun ReviewCardContent(
 
                 Text(
                     text = when {
+                        // 没定出分类：说清「账没动」，否则用户会以为又记了一笔新账
+                        reason == ReviewCardReason.NO_MATCH ->
+                            "这笔早就记过，只是页面里没认出分类。选一个分类就会补上，金额不会重复计入。"
+
                         // 补分类：重点是「这笔早就记过了」，金额没有被重复计入
                         reason == ReviewCardReason.ENRICHED ->
                             "这笔之前已经记过，刚把分类补成「$shownCategoryName」，金额没有重复计入。"
@@ -322,16 +318,11 @@ fun ReviewCardContent(
 }
 
 /**
- * 分类选择卡片。
+ * 分类选择卡片。内容与容器都复用「记一笔」页的 [CategoryPicker] / [GroupCard]，
+ * 因此网格、图标、选中态与二级展开动画都与应用内完全一致（不是照着重画一遍）。
  *
- * 内容直接用「记一笔」页的 [CategoryPicker]，容器用同页的 [GroupCard] + 12dp 内边距，
- * 因此网格、图标、选中态、二级展开动画与**应用内完全一致**（不是照着重画一遍）。
- *
- * 底部「返回 / 确认」沿用确认卡上那一对按钮的样式（取消在左、主操作在右）：
- * 选中分类**只是暂选**，点「确认」才落库并退回确认卡，点「返回」原样退回、什么也不改。
- *
- * `onManageCategory` 传 null：那格「＋新增」在记一笔页是跳分类管理用的，
- * 悬浮层里没有导航栈可跳，留着只会是一个点了没反应的按钮。
+ * 选中分类**只是暂选**：点「确认」才落库并退回确认卡，点「返回」原样退回、什么也不改。
+ * `onManageCategory` 传 null —— 那格「＋新增」在悬浮层里没有导航栈可跳，留着只会点了没反应。
  */
 @Composable
 private fun CategoryPickerPanel(
@@ -410,7 +401,7 @@ private fun List<CategoryNode>.nameOf(categoryId: Long): String? {
     return null
 }
 
-/** 一行「标签 + 值」；[onClick] 非空时整行可点，并在值后带一个可点的提示符 */
+/** 一行「标签 + 值」；[onClick] 非空时值可点，并在值后带一个可点的提示符 */
 @Composable
 private fun InfoRow(
     label: String,
@@ -418,11 +409,10 @@ private fun InfoRow(
     onClick: (() -> Unit)? = null
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        // 值自带 8dp 内边距，这里减掉，文字左边界与不可点的行保持一致
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
             text = label,
@@ -435,7 +425,15 @@ private fun InfoRow(
             color = if (onClick == null) AppTheme.color.onSurface else AppTheme.color.primary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth()
+            // 点击范围（连同按下高亮）只包住文字本身：铺满整行的高亮又宽又扁，点哪都亮一下很出戏
+            modifier = if (onClick == null) {
+                Modifier
+            } else {
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            }
         )
     }
 }
@@ -451,12 +449,7 @@ private fun formatCardTime(millis: Long): String =
 /** 卡片距屏幕左右与下缘的留白；入场位移要用到它，故提为常量 */
 private val CardBottomMargin = 16.dp
 
-/**
- * 入场时长（毫秒）。
- *
- * 取 280ms：比常见的 200ms 略长一点，让「从屏幕下缘滑上来」这段位移被看清；
- * 又不至于长到让用户觉得卡片慢半拍才出现。
- */
+/** 入场时长（毫秒）：比常见的 200ms 略长，让「从屏幕下缘滑上来」这段位移被看清 */
 private const val CARD_ENTER_DURATION_MS = 280
 
 /** 遮罩最终不透明度；随入场进度从 0 淡到此值 */
@@ -468,10 +461,5 @@ private const val PICKER_EXIT_MILLIS = 200
 /** 选择器弹起时，底下那张确认卡的压暗程度 */
 private const val DIMMED_CARD_ALPHA = 0.35f
 
-/**
- * 分类面板的可视高度上限（占屏幕高度的比例）。
- *
- * 分类多时面板会很长，直接把卡片顶到屏幕外；按屏高比例限制并允许内部滚动，
- * 既不遮住整屏，也不会在不同尺寸的机型上固定成一个不合适的绝对值。
- */
+/** 分类面板的可视高度上限（占屏高比例）：分类多时面板会很长，按比例限制并允许内部滚动 */
 private const val PICKER_MAX_SCREEN_RATIO = 0.45f

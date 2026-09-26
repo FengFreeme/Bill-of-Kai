@@ -14,8 +14,7 @@ import com.kai.bill.core.design.theme.DarkMode
 /**
  * 底部导航项的纯视觉描述 —— 不含路由 / NavController。
  *
- * @property label 文案
- * @property icon 图标；[selected] 由容器传入，便于选中态换色
+ * @property icon [selected] 由容器传入，便于选中态换色
  */
 data class KaiBottomBarItem(
     val label: String,
@@ -23,16 +22,10 @@ data class KaiBottomBarItem(
 )
 
 /**
- * 纯视觉底部导航栏。
+ * 纯视觉底部导航栏：只收 [selectedIndex] / [items] / [onItemClick]，不感知导航
+ * （导航装配在 `app/navigation/MainBottomBar`）。
  *
- * 只收 [selectedIndex] / [items] / [onItemClick]，不感知导航。
- * 导航装配放在 `app/navigation/MainBottomBar`。
  * 纯色皮肤复用 [GlassBottomBar]（历史命名，实现已是不透明 surface）。
- *
- * @param selectedIndex 当前选中项下标
- * @param items 导航项
- * @param onItemClick 点击某项（下标）
- * @param modifier 外部修饰符
  */
 @Composable
 fun KaiBottomBar(

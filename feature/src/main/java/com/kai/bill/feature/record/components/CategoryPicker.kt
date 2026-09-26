@@ -71,7 +71,6 @@ private const val SUB_GRID_ANIM_MILLIS = 300
  *   分类管理据此定位到对应大类并直接在其下新增，用户不必自己再找一遍。
  *   **传 null 表示不显示这一格** —— 确认卡片的悬浮层没有导航栈可跳，
  *   留着「＋」只会是一个点了没反应的按钮
- * @param modifier 外部修饰符
  */
 @Composable
 fun CategoryPicker(

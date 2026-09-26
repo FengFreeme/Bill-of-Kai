@@ -14,10 +14,7 @@ import java.util.Locale
 object PercentFormatter {
 
     /**
-     * 把 0~1 的比例格式化为百分比文案。
-     *
-     * @param ratio 比例；超出 [0,1] 会被收敛到边界（脏数据不应显示成 -5% 或 300%）
-     * @return 形如 `35.42%` 的字符串
+     * @param ratio 超出 [0,1] 会被收敛到边界（脏数据不应显示成 -5% 或 300%）
      */
     fun of(ratio: Float): String =
         "%.2f%%".format(Locale.US, ratio.coerceIn(0f, 1f) * 100f)

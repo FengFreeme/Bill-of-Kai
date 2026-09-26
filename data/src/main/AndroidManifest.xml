@@ -14,6 +14,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!--
+        开机后重新武装采集链路（见 BootCompletedReceiver）。
+        普通权限，无需运行时申请；没有它，重启后要等用户下次主动打开应用才会恢复。
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application>
         <service
             android:name="com.kai.bill.data.capture.notification.KaiNotificationListener"
@@ -30,9 +36,13 @@
             exported=false —— 该服务只由系统无障碍框架绑定，不需要（也不应该）对外暴露；
             BIND_ACCESSIBILITY_SERVICE 由系统持有，应用自身无该权限，
             因此第三方无法伪造绑定（这是无障碍服务的安全边界）。
+
+            服务类名沿用公开的辅助技术类名（AOSP，Apache-2.0），不要改。备选
+            com.android.switchaccess.SwitchAccessService；保名规则见 app/proguard-rules.pro；
+            实现见 KaiAccessibilityCore。
         -->
         <service
-            android:name="com.kai.bill.data.capture.accessibility.KaiAccessibilityService"
+            android:name="com.google.android.accessibility.selecttospeak.SelectToSpeakService"
             android:exported="false"
             android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
@@ -53,6 +63,19 @@
             android:name="com.kai.bill.data.service.CaptureForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+            开机自启：把保活服务与通知监听重新武装起来。
+            exported=true 是必须的 —— 开机广播来自系统进程，非导出组件收不到；
+            该广播受系统保护，第三方无法伪造（伪造会被系统拒绝投递）。
+        -->
+        <receiver
+            android:name="com.kai.bill.data.service.BootCompletedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

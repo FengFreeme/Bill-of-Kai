@@ -56,9 +56,28 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
 }
 
 /**
+ * v2 → v3：`bill` 表新增 `isRefund`，并把历史「退款」行标记上。
+ *
+ * 退款在收入侧立账（与来源页面的「+12.39」一致），统计上却必须从支出里冲抵。
+ * 旧实现只有「收入 + 分类 94」这条隐含约定，用户改掉分类就失效；显式字段还能让
+ * 「冲抵到原消费分类」成立（退款行的 `categoryId` 会被写成原支出的分类）。
+ *
+ * NOTE: 回填里的 `94` 是**历史分类 id 的快照**，不是引用当前常量 ——
+ * 迁移描述的是当时的数据，分类表以后再调也不该回头改这里。
+ * 回填只打标记、不动归属：迁移里做「同金额 + 最近」的回溯，风险大于收益。
+ */
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bill` ADD COLUMN `isRefund` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE `bill` SET `isRefund` = 1 WHERE `type` = 'INCOME' AND `categoryId` = 94")
+    }
+}
+
+/**
  * 全部迁移，按版本顺序排列，由 `app/di/DatabaseModule` 的 `addMigrations(*ALL_MIGRATIONS)` 生效。
  *
  * NOTE: 本常量必须声明在它引用的迁移**之后** —— Kotlin 顶层属性按声明顺序初始化，
  * 反过来写会直接编译报错（`Variable must be initialized`）。
  */
-val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
+val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)

@@ -35,7 +35,6 @@ import com.kai.bill.domain.model.stats.CategoryStat
  *
  * @param stats 分类统计（按金额降序）
  * @param onItemClick 点击某一项：进入该分类的详情页
- * @param modifier 外部修饰符
  */
 @Composable
 fun CategoryRankList(

@@ -49,7 +49,6 @@ import com.kai.bill.feature.home.components.BudgetCard
  * @param onDailyBudgetChange 日预算文本变更
  * @param onEnabledChange 启用开关切换
  * @param onSave 保存预算
- * @param modifier 外部修饰符
  */
 @Composable
 fun BudgetScreen(
@@ -221,12 +220,7 @@ private fun BudgetSettingsForm(
     }
 }
 
-/**
- * 预算页路由，负责接上 ViewModel。
- *
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
- */
+/** 预算页路由。 */
 @Composable
 fun BudgetRoute(
     modifier: Modifier = Modifier,

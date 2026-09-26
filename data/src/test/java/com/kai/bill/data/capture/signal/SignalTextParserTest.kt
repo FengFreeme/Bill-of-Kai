@@ -103,6 +103,79 @@ class SignalTextParserTest {
         assertNull(SignalTextParser.extractAmountCents("   "))
     }
 
+    @Test
+    fun `支付宝详情-按结构抽交易成功金额`() {
+        val alipay = "com.eg.android.AlipayGphone"
+        assertEquals(
+            5500L,
+            SignalTextParser.extractAmountCents(
+                "返回 全部账单 账单详情 滴滴出行 -55.00 交易成功 账单分类 交通出行 账单管理",
+                alipay
+            )
+        )
+    }
+
+    @Test
+    fun `支付宝详情-退款成功也能抽`() {
+        // 第四张截图回归：状态是「退款成功」
+        val alipay = "com.eg.android.AlipayGphone"
+        assertEquals(
+            1239L,
+            SignalTextParser.extractAmountCents(
+                "返回 全部账单 账单详情 退款-商家 +12.39 退款成功 对方账户 得力 账单管理",
+                alipay
+            )
+        )
+    }
+
+    @Test
+    fun `支付宝包名下不回落到标签规则误抽余额`() {
+        val alipay = "com.eg.android.AlipayGphone"
+        assertNull(
+            SignalTextParser.extractAmountCents(
+                "总金额(元) 564.18 累计收益¥0.09",
+                alipay
+            )
+        )
+    }
+
+    @Test
+    fun `微信详情-按结构抽当前状态前金额`() {
+        val wechat = "com.tencent.mm"
+        assertEquals(
+            1180L,
+            SignalTextParser.extractAmountCents(
+                "全部账单 得力文具官方旗舰店 -11.80 当前状态 支付成功 " +
+                    "支付时间 2026年9月19日 21:37:05 支付方式 零钱 账单服务",
+                wechat
+            )
+        )
+    }
+
+    @Test
+    fun `微信详情-退款不取已退款后缀金额`() {
+        val wechat = "com.tencent.mm"
+        assertEquals(
+            1239L,
+            SignalTextParser.extractAmountCents(
+                "全部账单 退款-商家 +12.39 当前状态 已退款 已退款¥12.39 账单服务",
+                wechat
+            )
+        )
+    }
+
+    @Test
+    fun `微信包名下无当前状态不回落到标签规则`() {
+        // 结构抽不到时必须返回 null，不能回落「实付」等标签误抽
+        val wechat = "com.tencent.mm"
+        assertNull(
+            SignalTextParser.extractAmountCents(
+                "实付 ¥28.30 支付成功",
+                wechat
+            )
+        )
+    }
+
     // ---------------- 交易时间 ----------------
 
     @Test

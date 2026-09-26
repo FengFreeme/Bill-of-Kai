@@ -24,8 +24,6 @@ interface PendingBillDao {
      *
      * 按 [PendingBillEntity.createdAt] **倒序**：待确认列表是「新来的在最上面」，
      * 与账单列表按交易时间倒序是同一套心智。
-     *
-     * @return 待确认记录流
      */
     @Query("SELECT * FROM pending_bill ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<PendingBillEntity>>
@@ -35,8 +33,6 @@ interface PendingBillDao {
      *
      * 单独一条 `COUNT(*)` 而不是让 UI 拿列表算长度：首页只需要一个数字，
      * 拉全表（含原文）纯属浪费。
-     *
-     * @return 条数流
      */
     @Query("SELECT COUNT(*) FROM pending_bill")
     fun observeCount(): Flow<Int>

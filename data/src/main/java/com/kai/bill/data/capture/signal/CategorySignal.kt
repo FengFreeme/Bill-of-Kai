@@ -6,7 +6,7 @@ package com.kai.bill.data.capture.signal
  * **声明顺序即可信度顺序**（越靠前越可信）：无障碍读到的是用户当下真实所见的界面，
  * 比识别截图得到的文本更少出错。
  *
- * ⚠️ [CategorySignalStore.recent] 按 `ordinal` **升序**排序，因此**调整本枚举顺序会
+ * NOTE: [CategorySignalStore.recent] 按 `ordinal` **升序**排序，因此**调整本枚举顺序会
  * 直接改变分类命中结果**。新增来源时请把更可信的那一类放在前面。
  */
 enum class CategorySignalOrigin {

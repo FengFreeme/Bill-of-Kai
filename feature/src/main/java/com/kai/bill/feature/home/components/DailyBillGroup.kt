@@ -37,7 +37,6 @@ import java.time.LocalDate
  * @param categories 分类映射
  * @param accounts 账户映射
  * @param onBillClick 点击单条账单回调
- * @param modifier 外部修饰符
  */
 @Composable
 fun DailyBillGroup(

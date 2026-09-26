@@ -1,5 +1,8 @@
 package com.kai.bill.data.capture.signal
 
+import com.kai.bill.data.capture.accessibility.AlipayBillPageHeuristics
+import com.kai.bill.data.capture.accessibility.BillPageHeuristics
+import com.kai.bill.data.capture.accessibility.WechatBillPageHeuristics
 import com.kai.bill.data.parser.AmountNormalizer
 import com.kai.bill.data.presets.AmountPattern
 import com.kai.bill.domain.time.Clock
@@ -15,6 +18,9 @@ import java.time.ZoneId
  * - 本解析器面向**整页文本**（可能同时出现订单号、余额、优惠、多笔金额），
  *   「位置靠前」完全不可靠 —— 支付页里第一个数字常常是优惠额或商品额。
  *   因此改用「**金额关键词邻近**」：只有紧挨着标签的数字才被认为是这笔交易的金额。
+ *
+ * **支付宝 / 微信详情页**例外：版式是大号 `±金额`，没有「实付」标签，
+ * 分别走 [AlipayBillPageHeuristics] / [WechatBillPageHeuristics] 结构抽取。
  *
  * 与金额闸门共用的部分：金额形态仍复用 [AmountPattern]（唯一真相），
  * 数字转「分」仍复用 [AmountNormalizer]，不在本类另写正则与换算 ——
@@ -78,17 +84,27 @@ object SignalTextParser {
     /**
      * 从整页文本中抽取**这笔交易的金额**。
      *
-     * 判定规则（按顺序）：
-     * 1. 收集所有货币语境金额（形态见 [AmountPattern]，卡号尾号这类裸数字天然不入选）；
-     * 2. 优先取「左侧紧邻金额标签」的那个，标签优先级见 [AMOUNT_ANCHORS]；
-     * 3. 若无任何金额带标签，且全页**只有一个**货币语境金额，才采纳它；
-     * 4. 其余情况返回 null（不猜）。
+     * - 支付宝包：优先 [AlipayBillPageHeuristics] 结构抽取（`±金额` + 交易成功/退款成功）；
+     * - 微信包：优先 [WechatBillPageHeuristics] 结构抽取（「当前状态」之前的第一个 `±x.xx`）；
+     * - 其它：标签邻近 → 全页唯一货币数（见下方规则）。
      *
      * @param text 已清洗为单行的页面 / OCR 文本
+     * @param packageName 来源包名；支付宝 / 微信走结构规则
      * @return 金额（分，恒为正）；无法确定时返回 null
      */
-    fun extractAmountCents(text: String): Long? {
+    fun extractAmountCents(text: String, packageName: String? = null): Long? {
         if (text.isBlank()) return null
+
+        if (packageName != null && BillPageHeuristics.isAlipay(packageName)) {
+            AlipayBillPageHeuristics.extractAmountCents(text)?.let { return it }
+            // 结构抽不到时不回落到标签规则：支付宝详情没有「实付」，回落易误抽余额
+            return null
+        }
+        if (packageName != null && BillPageHeuristics.isWechat(packageName)) {
+            WechatBillPageHeuristics.extractAmountCents(text)?.let { return it }
+            // 结构抽不到时不回落：退款页有两个同额数字，标签规则容易抽错或因不唯一而放弃
+            return null
+        }
 
         val matches = AmountPattern.ANY.findAll(text)
             .filterNot { isBalanceNumber(text, it.range) }

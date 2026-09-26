@@ -67,7 +67,6 @@ import com.kai.bill.feature.stats.components.vividSliceColor
  * @param onEdit 跳分类管理
  * @param onBillClick 点击单条流水（进编辑）
  * @param onBack 返回
- * @param modifier 外部修饰符
  */
 @Composable
 fun CategoryDetailScreen(
@@ -334,8 +333,6 @@ private fun SummaryDivider() {
  * @param onBack 返回
  * @param onEdit 跳分类管理
  * @param onBillClick 点击流水进编辑
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun CategoryDetailRoute(

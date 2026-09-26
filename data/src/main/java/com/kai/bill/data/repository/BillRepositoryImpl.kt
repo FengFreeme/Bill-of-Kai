@@ -114,9 +114,27 @@ class BillRepositoryImpl @Inject constructor(
         sources = AUTO_SOURCES.map(SourceType::toEntity)
     ).map(BillMapper::toDomain)
 
+    override suspend fun findRefundTarget(
+        amountCents: Long,
+        refundTimeMillis: Long
+    ): Bill? = billDao.findRefundTarget(
+        amountCents = amountCents,
+        startMillis = refundTimeMillis - REFUND_LOOKBACK_MILLIS,
+        endMillis = refundTimeMillis
+    )?.let(BillMapper::toDomain)
+
     override suspend fun deleteById(id: Long) = billDao.deleteById(id)
 
     private companion object {
+
+        /**
+         * 退款回溯窗口：30 天。
+         *
+         * 放宽会把「同额支出」的误配窗口一并放大（总额不受影响，只有分类 / 月份可能偏）；
+         * 收紧则「上月买、下月退」会退回按退款自身归属。30 天覆盖了最常见的跨月场景。
+         */
+        const val REFUND_LOOKBACK_MILLIS = 30L * 24 * 60 * 60 * 1000
+
 
         /**
          * 允许被自动回填 / 建账判定的来源。

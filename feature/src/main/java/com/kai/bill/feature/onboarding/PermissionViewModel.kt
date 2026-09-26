@@ -18,6 +18,7 @@ import com.kai.bill.core.common.ext.openNotificationListenerSettings
 import com.kai.bill.core.common.ext.openOemAutoStartSettings
 import com.kai.bill.core.common.ext.requestIgnoreBatteryOptimizations
 import com.kai.bill.core.prefs.CaptureState
+import com.kai.bill.domain.time.Clock
 import com.kai.bill.core.prefs.KaiPrefs
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -40,10 +41,11 @@ class PermissionViewModel @Inject constructor(
     application: Application,
     private val kaiPrefs: KaiPrefs,
     private val reviewCardOverlay: ReviewCardOverlay,
-    private val captureHintOverlay: CaptureHintOverlay
+    private val captureHintOverlay: CaptureHintOverlay,
+    private val clock: Clock
 ) : AndroidViewModel(application) {
 
-    /** 采集链路状态（连接态 / 最近成功时间 / 主开关），供页面展示与开关绑定。 */
+    /** 采集链路状态：连接态 / 最近成功时间 / 主开关。 */
     val captureState: Flow<CaptureState> = kaiPrefs.captureState
 
     /** 用户主开关：是否启用自动采集。UI 仅写 prefs，前台服务启停由 data 层监听完成。 */
@@ -81,11 +83,10 @@ class PermissionViewModel @Inject constructor(
     }
 
     /**
-     * 测试确认卡片：用**最近一笔账单**把悬浮卡片显示出来。
+     * 测试确认卡片：用**最近一笔账单**显示悬浮卡片。
      *
-     * 存在的理由：这个功能曾经「静默不生效」过 —— 卡片一次都没弹出来，
-     * 而系统既不抛异常也不留日志，只能靠反复付真钱去试。
-     * 给一个不花钱的验证入口，是把「可验证性」补回来。
+     * 悬浮卡片曾静默不生效（不抛异常也无日志），只能靠真付钱尝试；
+     * 这里提供一个不花钱的验证入口。
      */
     fun testCard() {
         viewModelScope.launch {
@@ -107,17 +108,21 @@ class PermissionViewModel @Inject constructor(
     /**
      * 测试提示条：直接弹一条「此账单已记录，无需重复记录」。
      *
-     * 与 [testCard] 同一套理由 —— 提示条与卡片同走 `WindowManager` 那条**会静默失败**
-     * 的路径，没有不花钱的验证入口就只能靠真去买一笔来试。
-     *
-     * 先撤掉可能挂着的确认卡片：提示条按优先级会让位给卡片（避免顶掉用户正在操作的内容），
-     * 而测试入口必须每次都看得见结果，所以这里先把卡片清掉。
+     * 与 [testCard] 同理由：提示条与卡片同走 `WindowManager` 那条会静默失败的路径。
+     * 先撤掉可能挂着的确认卡片 —— 提示条按优先级会让位给卡片，而测试入口必须每次可见结果。
+     * 每次都换去重身份 —— 宿主会挡下「同一条提示 10 秒内不重复弹」，那是采集侧节流，
+     * 不该作用在这个入口上。
      */
     fun testHint() {
         viewModelScope.launch {
             runCatching { captureHintOverlay.dismiss() }
             val shown = runCatching {
-                captureHintOverlay.show(CaptureHint(CaptureHintKind.ALREADY_RECORDED))
+                captureHintOverlay.show(
+                    CaptureHint(
+                        kind = CaptureHintKind.ALREADY_RECORDED,
+                        key = "test-${clock.nowMillis()}"
+                    )
+                )
             }.getOrDefault(false)
             _uiState.update {
                 it.copy(
@@ -157,15 +162,11 @@ class PermissionViewModel @Inject constructor(
 /**
  * 引导页 UI 状态。
  *
- * @property rom 当前机型 ROM，仅用于展示
- * @property listenerEnabled 通知使用权是否已授予（实时检测）
- * @property accessibilityGranted 无障碍服务是否已在系统设置中启用（实时检测）。
- *           注意它只回答「系统里勾选了没有」；「服务此刻是否真的在跑」由服务自己写入
+ * @property accessibilityGranted 只回答「系统里勾选了没有」；「服务此刻是否真在跑」由服务自己写入
  *           `CaptureState.accessibilityEnabled`，两者不一致本身就是排查线索
  * @property batteryOptimized true 表示仍被电池优化限制（需引导关闭）
- * @property steps 当前 ROM 下的引导步骤列表
- * @property cardTestHint 「测试确认卡片」的结果提示；空串表示还没点过
- * @property hintTestHint 「测试提示条」的结果提示；空串表示还没点过
+ * @property cardTestHint 测试确认卡片的结果提示；空串表示还没点过
+ * @property hintTestHint 测试提示条的结果提示；空串表示还没点过
  */
 data class PermissionUiState(
     val rom: Rom,

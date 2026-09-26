@@ -5,6 +5,7 @@ import com.kai.bill.core.common.overlay.CaptureHintKind
 import com.kai.bill.core.common.overlay.CaptureHintOverlay
 import com.kai.bill.core.common.overlay.ReviewCardReason
 import com.kai.bill.core.prefs.KaiPrefs
+import com.kai.bill.data.capture.accessibility.BillPageHeuristics
 import com.kai.bill.data.ingest.ReconcileOutcome
 import com.kai.bill.data.ingest.ReconcileResult
 import com.kai.bill.data.ingest.SignalReconciler
@@ -53,8 +54,6 @@ class CategorySignalRecorder @Inject constructor(
      *
      * 本方法**不会抛异常** —— 采集回调（无障碍事件、截图通知）里任何一次失败
      * 都不该影响系统的事件分发或后续采集。
-     *
-     * @param signal 采集层构造好的信号
      */
     fun record(signal: CategorySignal) {
         if (signal.text.isBlank()) return
@@ -76,9 +75,10 @@ class CategorySignalRecorder @Inject constructor(
             )
         }
 
-        // 反馈一：确认卡片。只有「确实记上了」才有可改可撤的内容；
+        // 反馈一：确认卡片。动过账（新建 / 补分类）需要用户过目；
+        // 没定出分类时卡片是用户补上分类的唯一入口，同样要弹。
         // 放弃 / 重复 / 抽不到金额时弹一张空卡片只会打扰用户。
-        // 来由必须一起传下去：卡片要说清「刚记了一笔」还是「只补了分类」。
+        // 来由必须一起传下去：卡片要说清「刚记了一笔」「只补了分类」还是「等你选分类」。
         result.reviewBillId?.let { billId ->
             runCatching { reviewNotifier.notifyForReview(billId, result.cardReason()) }
         }
@@ -90,31 +90,47 @@ class CategorySignalRecorder @Inject constructor(
         }
     }
 
-    /** 卡片要解释的来由：补分类与新建是两件事，文案不能共用 */
-    private fun ReconcileResult.cardReason(): ReviewCardReason =
-        if (outcome == ReconcileOutcome.ENRICHED) {
-            ReviewCardReason.ENRICHED
-        } else {
-            ReviewCardReason.CREATED
-        }
+    /** 卡片要解释的来由：新建 / 补分类 / 没定出分类是三件事，文案不能共用 */
+    private fun ReconcileResult.cardReason(): ReviewCardReason = when (outcome) {
+        ReconcileOutcome.ENRICHED -> ReviewCardReason.ENRICHED
+        ReconcileOutcome.NO_MATCH -> ReviewCardReason.NO_MATCH
+        else -> ReviewCardReason.CREATED
+    }
 
     /**
      * 这次结果要不要给一条屏幕提示；不需要时返回 null。
      *
-     * 只收两种「用户当下看不到任何变化」的结果：
-     * - [ReconcileOutcome.DUPLICATE]：页面早就记过了 —— 最高频的形态，用户点开账单详情就会遇到；
-     * - [ReconcileOutcome.PENDING]：进了待确认列表，页面上什么都没发生。
+     * 只收两种「用户当下看不到任何变化」的结果：已记录（[ReconcileOutcome.DUPLICATE]，
+     * 最高频形态）与待确认（[ReconcileOutcome.PENDING]）。其余不提示 ——
+     * 尤其是 `NO_AMOUNT`（多数页面不是账单）与 `EXCLUDED`，提示它们等于刷屏。
      *
-     * 其余一律不提示，尤其是 [ReconcileOutcome.NO_AMOUNT]（绝大多数页面都不是账单）
-     * 与 [ReconcileOutcome.EXCLUDED]（失败 / 营销 / 预告），提示它们等于刷屏。
+     * 两条提示都带 [pageKey]：宿主靠它判「是不是同一件事」，少了它连续切两笔不同的
+     * 重复账单时第二笔会被误判成重复而不再提示。
      */
     private fun hintFor(result: ReconcileResult, signal: CategorySignal): CaptureHint? =
         when (result.outcome) {
-            ReconcileOutcome.DUPLICATE -> CaptureHint(CaptureHintKind.ALREADY_RECORDED)
-            ReconcileOutcome.PENDING ->
-                CaptureHint(CaptureHintKind.NEEDS_REVIEW, signal.amountCents)
+            ReconcileOutcome.DUPLICATE -> CaptureHint(
+                kind = CaptureHintKind.ALREADY_RECORDED,
+                amountCents = signal.amountCents,
+                key = signal.pageKey()
+            )
+
+            ReconcileOutcome.PENDING -> CaptureHint(
+                kind = CaptureHintKind.NEEDS_REVIEW,
+                amountCents = signal.amountCents,
+                key = signal.pageKey()
+            )
+
             else -> null
         }
+
+    /**
+     * 「这一页」的身份：包名 + 页面全文。
+     *
+     * 无障碍层保证「一页一信号」，因此按页判重只挡「在同一页进进出出」的反复闪条；
+     * 切到另一笔账单必须照常提示 —— 用提示自身字段判重做不到这点（见 `CaptureHint.key`）。
+     */
+    private fun CategorySignal.pageKey(): String = "${packageName.orEmpty()}|$text"
 
     /**
      * 给诊断文本加一段「结论摘要」前缀。
@@ -137,6 +153,8 @@ class CategorySignalRecorder @Inject constructor(
             }.getOrNull()
             if (!name.isNullOrBlank()) parts += "分类 $name"
         }
+        // 识别方式：页面/金额判定走哪套规则（支付宝专属 / 微信专属 / 通用），与采集通道「来源」不是一回事
+        parts += "识别方式 ${signal.heuristicsLabel()}"
         parts += "来源 ${signal.origin.sourceLabel()}"
         return parts.joinToString(SUMMARY_SEP) + SUMMARY_SEP + signal.text
     }
@@ -145,7 +163,22 @@ class CategorySignalRecorder @Inject constructor(
     private fun formatYuan(cents: Long): String =
         "¥${cents / 100}.${(cents % 100).toString().padStart(2, '0')}"
 
-    /** 信号来源 → 用户看得懂的两个字 */
+    /**
+     * 本条信号实际走的判定规则。
+     *
+     * 支付宝 / 微信包名走专属规则；其余走通用字段规则。
+     * 写进诊断后，引导页「最近识别记录」能直接看出是哪套逻辑命中的。
+     */
+    private fun CategorySignal.heuristicsLabel(): String {
+        val pkg = packageName ?: return "通用"
+        return when {
+            BillPageHeuristics.isAlipay(pkg) -> "支付宝专属"
+            BillPageHeuristics.isWechat(pkg) -> "微信专属"
+            else -> "通用"
+        }
+    }
+
+    /** 信号来源 → 用户看得懂的两个字（采集通道，不是判定规则） */
     private fun CategorySignalOrigin.sourceLabel(): String = when (this) {
         CategorySignalOrigin.ACCESSIBILITY -> "无障碍"
         CategorySignalOrigin.SCREENSHOT -> "截图"

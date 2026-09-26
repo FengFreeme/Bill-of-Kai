@@ -23,16 +23,12 @@ import javax.inject.Inject
 private const val NEW_CATEGORY_COLOR = "#8A94A6"
 
 /**
- * 分类管理页 ViewModel。
- *
- * 只做三件事：新增（一级 / 二级）、改名、删除。排序号在同级末尾追加，不做拖拽排序。
+ * 分类管理页 ViewModel：新增（一级 / 二级）、改名、删除；排序号在同级末尾追加，不做拖拽排序。
  *
  * 两条保护规则（都在本类里拦，UI 不必重复判断）：
  * - 预置分类（`isSystem`）不可删 —— DAO 的 `deleteIfCustom` 已带 `isSystem = 0` 条件，这里再提示一次；
  * - **名下还有二级分类的一级不可删** —— 直接删父会留下一批 `parentId` 指向空档的孤儿行，
- *   而分类表没有外键级联，孤儿会静默掉出树视图、却又仍被账单引用，比拦下来更难收拾。
- *
- * @property categoryRepository 分类仓储
+ *   分类表没有外键级联，孤儿会静默掉出树视图、却又仍被账单引用，比拦下来更难收拾。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -50,8 +46,7 @@ class CategoryManageViewModel @Inject constructor(
     /**
      * 进入页面时要定位的一级分类（由 [focusOn] 写入）。
      *
-     * 用状态流而非普通字段：分类树是异步流，进页面时可能还没到位，
-     * 目标得先存下来，等树到了再一次性应用。
+     * 用状态流而非普通字段：分类树是异步流，进页面时可能还没到位，目标得先存下来等树到了再用。
      */
     private val focusTargetId = MutableStateFlow<Long?>(null)
     private var focusApplied = false
@@ -130,8 +125,8 @@ class CategoryManageViewModel @Inject constructor(
     /**
      * 定位到某个一级分类：只展开它，并直接弹出「在它下面新增」。
      *
-     * 从记一笔某个大类的二级网格点「＋」进来时用。没有这一步，分类管理只是普通打开，
-     * 用户新增出来的分类会追加到同级末尾（列表最后一行），而不是落在这个大类下面。
+     * 从记一笔某个大类的二级网格点「＋」进来时用；没有这一步，新分类会追加到同级末尾，
+     * 而不是落在这个大类下面。
      */
     fun focusOn(parentId: Long) {
         if (parentId <= 0L) return

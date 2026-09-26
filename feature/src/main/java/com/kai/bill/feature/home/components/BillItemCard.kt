@@ -48,7 +48,6 @@ import java.util.Locale
  * @param bill 账单
  * @param category 分类；为 null 时回退显示账单类型
  * @param account 账户；用于生成来源标签，为空时使用 [SourceType] 默认标签
- * @param modifier 外部修饰符
  * @param onClick 可选点击（进入编辑）
  */
 @Composable
@@ -115,6 +114,20 @@ fun BillItemCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                // 退款挂在原消费分类下、冲抵的是支出，不标注会像一笔凭空多出来的收入
+                if (bill.isRefund) {
+                    Surface(
+                        color = AppTheme.ext.expense.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "退款",
+                            style = AppTheme.typography.labelSmall,
+                            color = AppTheme.ext.expense,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 val tag = account?.name?.takeIf { it.isNotBlank() } ?: bill.source.sourceDisplayName()
                 Surface(
                     color = AppTheme.color.surfaceVariant,

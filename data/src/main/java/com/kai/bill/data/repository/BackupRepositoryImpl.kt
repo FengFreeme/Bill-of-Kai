@@ -10,6 +10,7 @@ import com.kai.bill.domain.model.Category
 import com.kai.bill.domain.model.DailyMode
 import com.kai.bill.domain.model.DateRange
 import com.kai.bill.domain.model.ImportSummary
+import com.kai.bill.domain.model.RefundCategory
 import com.kai.bill.domain.model.SourceType
 import com.kai.bill.domain.repository.AccountRepository
 import com.kai.bill.domain.repository.BackupRepository
@@ -180,6 +181,9 @@ class BackupRepositoryImpl @Inject constructor(
                     put(FIELD_AMOUNT_CENTS, bill.amountCents)
                     put(FIELD_TYPE, bill.type.name)
                     put(FIELD_COUNT_IN_STATS, bill.countInStats)
+                    // 退款标记必须带上：它决定这笔算收入还是冲抵支出，
+                    // 丢了会让恢复后的统计整体偏大（退款当成收入）
+                    put(FIELD_IS_REFUND, bill.isRefund)
                     put(FIELD_CATEGORY_NAME, category?.name)
                     put(FIELD_CATEGORY_PARENT_NAME, category?.let { parentNameOf(it, categoriesById) })
                     put(FIELD_ACCOUNT_NAME, bill.accountId?.let { accountsById[it]?.name })
@@ -323,6 +327,10 @@ class BackupRepositoryImpl @Inject constructor(
                     amountCents = obj.optLong(FIELD_AMOUNT_CENTS, 0L),
                     type = type,
                     countInStats = obj.optBoolean(FIELD_COUNT_IN_STATS, true),
+                    // 老备份没有这个字段，退回旧实现的那条隐含约定认一次（收入 + 分类「退款」），
+                    // 否则恢复后这些退款会被当成收入；新旧两种备份都能正确恢复。
+                    isRefund = obj.optBoolean(FIELD_IS_REFUND) ||
+                        (type == BillType.INCOME && categoryId == RefundCategory.ID),
                     categoryId = categoryId,
                     accountId = obj.stringOrNull(FIELD_ACCOUNT_NAME)?.let { accountIdByName[it] },
                     merchant = obj.stringOrNull(FIELD_MERCHANT),
@@ -381,6 +389,7 @@ class BackupRepositoryImpl @Inject constructor(
         const val FIELD_CARRY_OVER = "carryOver"
         const val FIELD_ENABLED = "enabled"
         const val FIELD_COUNT_IN_STATS = "countInStats"
+        const val FIELD_IS_REFUND = "isRefund"
         const val FIELD_MERCHANT = "merchant"
         const val FIELD_NOTE = "note"
         const val FIELD_TRADE_TIME = "tradeTimeMillis"

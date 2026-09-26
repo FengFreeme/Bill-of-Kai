@@ -51,7 +51,6 @@ import com.kai.bill.feature.home.components.OverviewCard
  * @param onBillClick 点击账单进入编辑
  * @param pendingCount 待确认账单条数；**为 0 时不渲染卡片**（没有待办就不要占位置）
  * @param onReviewClick 进入待审核记录页
- * @param modifier 外部修饰符
  */
 @Composable
 fun HomeScreen(
@@ -197,9 +196,7 @@ fun HomeScreen(
     }
 }
 
-/**
- * 监听断连预警横幅（M6 保活/异常排查）：点击跳转去重新开启通知监听。
- */
+/** 监听断连预警横幅：点击跳转去重新开启通知监听。 */
 @Composable
 private fun ListenerWarningBanner(onClick: () -> Unit) {
     ListCard(
@@ -283,8 +280,6 @@ private fun rememberAccountMap(accounts: List<com.kai.bill.domain.model.Account>
  * @param onRecordClick 进入记一笔二级页（由 NavHost 注入）
  * @param onBillClick 点击账单进入编辑
  * @param onReviewClick 进入待审核记录页
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun HomeRoute(

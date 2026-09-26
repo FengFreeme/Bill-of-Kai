@@ -15,6 +15,10 @@
 # ---- 领域模型（账单解析依赖字段名）----
 -keep class com.kai.bill.domain.model.** { *; }
 
+# ---- 无障碍服务类名不能被重命名：微信按服务完整类名决定是否放出页面节点树 ----
+# 类名出处：AOSP 随选朗读 SelectToSpeak（Apache-2.0）。
+-keep class com.google.android.accessibility.selecttospeak.SelectToSpeakService { *; }
+
 # ---- 关闭日志中的行号信息（可选）----
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

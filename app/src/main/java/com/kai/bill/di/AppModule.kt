@@ -20,15 +20,11 @@ import javax.inject.Singleton
 /**
  * 应用级依赖绑定 —— 全工程**唯一**允许出现 `@Provides` 的地方（基础设施类）。
  *
- * 模块边界：本 Module 只负责「基础设施」（存储、时钟、调度器），
- * 业务实现类的绑定（Repository 等）在 [RepositoryModule] 与 [DataSourceModule]，
- * 避免所有绑定挤在一个文件里。
+ * 业务实现类的绑定在 [RepositoryModule] 与 [DataSourceModule]，避免绑定全挤在一个文件里。
+ * Clock 接口在 domain，系统实现 [SystemClock] 在此绑定，保证 domain 零依赖。
  *
- * Clock：接口在 domain，系统实现 [SystemClock] 在此绑定，保证 domain 零依赖。
- *
- * 为什么 DataStore 用 `PreferenceDataStoreFactory` 而非 `preferencesDataStore` 委托：
- * 委托属性绑定在 `Context` 的扩展上，Hilt 无法感知；工厂方式能在 `@Provides` 里
- * 显式拿到 `Context` 并控制 `CoroutineScope`，契合 DI 的单一收口原则。
+ * DataStore 用 `PreferenceDataStoreFactory` 而非 `preferencesDataStore` 委托：委托属性绑在
+ * `Context` 扩展上、Hilt 无法感知；工厂方式能在 `@Provides` 里显式拿 `Context` 并控制 `CoroutineScope`。
  */
 @Module
 @InstallIn(SingletonComponent::class)

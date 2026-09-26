@@ -1,5 +1,6 @@
 package com.kai.bill.core.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -11,11 +12,15 @@ import androidx.room.PrimaryKey
  * - `dedupHash` 上建**唯一索引**，从数据库层面杜绝重复入库（去重的第一道防线）
  * - `rawText` 存原始通知/短信全文，是解析规则热更新后批量重解析的命根子
  * - `countInStats` 把「是否计入统计」从类型中剥离，一次性覆盖转账/报销/AA 等边界场景
+ * - `isRefund` 把「退款」从收入里剥离：收入侧不计入，支出侧折成负项（冲抵）
  *
  * @property amountCents 金额，单位「分」，**恒为正数**；正负语义由 [type] 决定
- * @property type 账单类型：支出 / 收入 / 转账
  * @property countInStats 是否计入统计与预算。**只对支出 / 收入有意义** ——
  *           转账本就被排除在收支之外，该字段对转账不产生任何影响
+ * @property isRefund 是否退款。**退款行的 [type] 仍是 INCOME**（与来源页面的「+12.39」一致），
+ *           但在统计里属于支出侧的负项；`time` / `categoryId` / `accountId` 存的是**原消费**的
+ *           归属（落库时回溯原支出账单写入），因此「哪个月支出的就哪个月加回去」。
+ *           统计口径与内存路径的等价实现见 `Bill.signedExpenseCents`。
  * @property categoryId 分类 ID；当 [type] 为 [BillType.TRANSFER] 时复用为「还款/互转/借款」子类型
  * @property accountId 账户 ID，可空（未指定账户的流水）
  * @property merchant 商户名，解析得出
@@ -47,6 +52,15 @@ data class BillEntity(
     val type: BillType,
 
     val countInStats: Boolean,
+
+    /**
+     * 是否退款（`type` 仍是 INCOME，统计上属支出侧负项）。
+     *
+     * NOTE: `defaultValue = "0"` 供 `MIGRATION_2_3` 的 `ADD COLUMN` 使用 ——
+     * Room 只校验实体声明过的默认值，两边写成同一个才不会被 schema 校验判成不一致。
+     */
+    @ColumnInfo(defaultValue = "0")
+    val isRefund: Boolean = false,
 
     val categoryId: Long,
 

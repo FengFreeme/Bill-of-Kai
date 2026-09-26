@@ -17,12 +17,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * 一条类别信号的最终处理结果。
  *
- * 取值会原样写进诊断（见 `KaiPrefs.recordSignalResult`）并在引导页展示，
- * 因此**新增取值时必须同步 `PermissionCheckScreen` 的文案表** ——
- * 这与 `CaptureResult` 是同一条约定：用户只有这一个自查入口。
+ * 取值会原样写进诊断（见 `KaiPrefs.recordSignalResult`）并在引导页展示，因此**新增取值时必须
+ * 同步 `PermissionCheckScreen` 的文案表**（与 `CaptureResult` 同一条约定：用户只有这一个自查入口）。
  *
- * 其中 [CREATED] 与 [ENRICHED] 还承担另一个职责：它们是**确认卡片**（M-L2-4）的触发条件 ——
- * 只有「确实记上了」才值得弹卡片，其余结果弹了也没东西可改。
+ * 其中 [CREATED] / [ENRICHED] / [NO_MATCH] 还承担**确认卡片**的触发：前两者是「确实动过账」，
+ * 用户需要知道发生了什么；[NO_MATCH] 是「有唯一候选但没定出分类」，卡片是它唯一能离开「其他」的入口。
  */
 enum class ReconcileOutcome {
 
@@ -56,10 +55,10 @@ enum class ReconcileOutcome {
     /**
      * 是否值得进诊断历史。
      *
-     * 「没抽到金额」是压倒性的高频结果 —— 无障碍服务每次读到页面都会过一遍，
-     * 绝大多数页面根本不是账单。把它收进历史会瞬间刷满列表，
-     * 真正要查的那条（补了分类 / 多记了一笔）反而被顶掉。
-     * 这条取舍与通知侧「只记抽到金额的通知」完全一致。
+     * 「没抽到金额」是压倒性的高频结果（无障碍每次读到页面都会过一遍，绝大多数页面根本不是账单），
+     * 收进历史会瞬间刷满列表、把真正要查的那条顶掉；这条取舍与通知侧「只记抽到金额的通知」一致。
+     *
+     * 排查「整条链路是不是压根没产出」时可临时改成 `true`（连 `NO_AMOUNT` 一起记），查完必须改回。
      */
     val worthHistory: Boolean
         get() = this != NO_AMOUNT
@@ -68,7 +67,6 @@ enum class ReconcileOutcome {
 /**
  * 信号决策的完整结果。
  *
- * @property outcome 结果编码；写进诊断，并驱动引导页文案
  * @property billId 受影响的账单主键；未产生也未改动账单时为 null
  */
 data class ReconcileResult(
@@ -79,12 +77,15 @@ data class ReconcileResult(
     /**
      * 需要弹确认卡片的账单 id；不需要弹时为 null。
      *
-     * 只有「确实记上了」才值得打扰用户：`CREATED`（凭空多了一笔，用户最需要知道）
-     * 与 `ENRICHED`（分类被改了，需要知道改成了什么）。其余情形弹了也没有可操作的内容。
+     * - `CREATED`（凭空多了一笔）/ `ENRICHED`（分类被改了）：用户需要知道发生了什么；
+     * - `NO_MATCH`（有唯一候选、只是没定出分类）：卡片是让他当场补上分类的唯一入口。
+     * 其余情形（多候选、抽不到金额、重复、排除）弹了也没有可操作的内容。
      */
     val reviewBillId: Long?
         get() = billId?.takeIf {
-            outcome == ReconcileOutcome.CREATED || outcome == ReconcileOutcome.ENRICHED
+            outcome == ReconcileOutcome.CREATED ||
+                outcome == ReconcileOutcome.ENRICHED ||
+                outcome == ReconcileOutcome.NO_MATCH
         }
 }
 
@@ -98,13 +99,11 @@ data class ReconcileResult(
  * ③ 一条都没命中           → 等宽限期再复核 → 仍没有 → 由信号建账
  * ```
  *
- * **宽限期默认是 0（不等）**：真实使用形态是「付款之后（或收到通知之后）再点开账单详情页」，
- * 那一刻通知早已落库 —— 有通知就命中回填、没有就直接建账，两种都不需要等。
- * 宽限期只为兜住「页面信号比通知还早约 0.5 秒」这一种竞态；真的遇到时把它调大即可，
- * 届时 L1 一落库就会发事件把这里叫醒（见 [IngestEvents]），不会真的睡满。
+ * 宽限期默认 0（不等）：真实形态是「付款之后再点开账单详情页」，那时通知早已落库。
+ * 它只为兜住「页面信号比通知早约 0.5 秒」这一种竞态，届时 L1 一落库就会发事件叫醒
+ * （见 [IngestEvents]），不会真睡满。
  *
- * **建账完全复用 [IngestPipeline]**：金额闸门、方向判定、分类路由、账户路由、去重落库
- * 一行都不重写，所以不存在「信号记账与通知记账口径不一致」的可能。
+ * 建账完全复用 [IngestPipeline]，不存在「信号记账与通知记账口径不一致」的可能。
  */
 @Singleton
 class SignalReconciler @Inject constructor(
@@ -141,12 +140,11 @@ class SignalReconciler @Inject constructor(
     /**
      * 宽限期内「等落库事件 或 等到超时」，谁先到算谁。
      *
-     * 与「盲等一个 delay」的差别：L1 通知一落库就会发事件（见 [IngestEvents]），
-     * 这里被叫醒后**立刻复核**并转成回填，把「补记一笔」的等待从「睡满宽限期」
-     * 压到「通知到达的那一刻」；期间若被**别的**账单叫醒，复核不命中就继续等，直到超时。
+     * 与「盲等一个 delay」的差别：L1 通知一落库就发事件（见 [IngestEvents]），这里被叫醒后
+     * **立刻复核**并转成回填，把等待从「睡满宽限期」压到「通知到达的那一刻」；被**别的**账单
+     * 叫醒时复核不命中就继续等，直到超时。
      *
-     * @return 宽限期内已有结论时返回该结论（回填 / 放弃 / 判重）；超时且仍无候选返回 null，
-     *         由调用方进入建账分支
+     * @return 宽限期内已有结论时返回该结论（回填 / 放弃 / 判重）；超时且仍无候选返回 null 交给调用方建账
      */
     private suspend fun awaitBillSavedOrTimeout(signal: CategorySignal): ReconcileResult? {
         // 默认不等待：绝大多数场景是「付款后才点开详情页」，通知早已落库，
@@ -205,9 +203,9 @@ class SignalReconciler @Inject constructor(
             // 用**账单自己的来源**过滤词条：有的分类词声明了来源限定（如仅短信场景）
             val match = categoryRouter.resolve(signal.text, bill.type, bill.source, keywords)
             if (match.isFallback) {
-                // 有账单可配，但信号也定不出分类 → 什么都不做。
-                // 这里绝不能转去建账：那会给同一笔凭空多记一次。
-                return MatchStep.Done(ReconcileResult(ReconcileOutcome.NO_MATCH, null))
+                // 有账单可配，但信号定不出分类 → 不改账，把账单 id 交给确认卡片，
+                // 由用户当场选一个分类。这里绝不能转去建账：那会给同一笔凭空多记一次。
+                return MatchStep.Done(ReconcileResult(ReconcileOutcome.NO_MATCH, bill.id))
             }
 
             val enriched = enrich(bill, match.categoryId)
@@ -221,16 +219,11 @@ class SignalReconciler @Inject constructor(
         }
 
         // —— 第二步：这笔是不是其实已经记过了？ ——
-        // 没有可回填的候选 ≠ 没有账。真机上最高频的形态恰恰是「有账，但已经分好类」：
-        //   信号比通知早约 0.5s 到达 → 通知落库时 S3 从信号窗口读到本条信号
-        //   → 那笔通知账单**一落库就带正确分类** → 不在兜底集合里 → 被上面筛掉。
-        // 少了这一步，就会把它误判成「无账可配」，把同一笔再记一次（真机已复现）
-        // ——而且 S5 那两道去重都拦不住：秒桶不同、时间差 5.4s 又超出 3s 时间窗。
-        //
-        // 身份只能用金额：方向要在流水线里才判得出，这里拿不到。
-        // 代价是「同一窗口内、同金额的第二笔真实消费」会被判成重复而漏记 ——
-        // 与本项目一贯的取向一致（宁可漏记，也不记错），且诊断里能看到 `重复跳过`。
-        // 信号不带金额时 `alreadyRecorded` 恒为 false，而那种信号本就建不了账（NO_AMOUNT），无风险。
+        // 没有可回填的候选 ≠ 没有账：信号比通知早约 0.5s 时，通知账单会一落库就带正确分类
+        //   （S3 从信号窗口读到本条信号），于是不在兜底集合里、被第一步筛掉；少了这一步就会
+        //   把它当成「无账可配」再记一次（真机已复现），而 S5 那两道去重都拦不住。
+        // 身份只能用金额（方向要进流水线才判得出）；代价是同窗口内的同额第二笔真实消费会被漏记，
+        // 与「宁可漏记也不记错」的取向一致，诊断里能看到 `重复跳过`。
         val alreadyRecorded = signal.amountCents
             ?.let { amount -> windowBills.any { it.amountCents == amount } }
             ?: false

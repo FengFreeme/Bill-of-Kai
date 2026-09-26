@@ -9,8 +9,8 @@ import com.kai.bill.domain.model.SourceType
  *
  * 把「命中这个词之后这笔钱算什么」收敛成一个枚举，是为了让 [DirectionRouter] 与
  * [com.kai.bill.data.ingest.IngestPipeline] 的判定保持**穷尽**：将来新增一类走向时，
- * 所有 `when` 都会在编译期报错，而不是让某个分支悄悄落到默认值 ——
- * 旧实现里 `?: BillType.EXPENSE` 的兜底正是「余额宝收益被记成支出」这类错账的根源。
+ * 所有 `when` 都会在编译期报错，而不是让某个分支用默认值兜底 ——
+ * `?: BillType.EXPENSE` 这类兜底正是「余额宝收益被记成支出」的根源。
  *
  * @property type 直接落库时的账单类型；需要人工确认或排除时为 null
  * @property pendingReason 需要人工确认时的原因；仅待确认类为非 null
@@ -68,7 +68,6 @@ enum class MatchRoute(
  */
 interface Matchable {
 
-    /** 触发词 */
     val keyword: String
 
     /** 降序比较；相同优先级时取**更长**的词（更具体者胜） */

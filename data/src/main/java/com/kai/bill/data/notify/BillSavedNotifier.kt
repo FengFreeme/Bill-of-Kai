@@ -25,7 +25,6 @@ interface BillSavedNotifier {
      *
      * @param amountCents 金额（分）
      * @param type 账单类型（支出 / 收入 / 转账）
-     * @param source 采集来源
      */
     fun notifySaved(amountCents: Long, type: BillType, source: SourceType)
 }

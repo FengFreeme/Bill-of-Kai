@@ -18,6 +18,7 @@ import com.kai.bill.domain.model.CaptureResult
 import com.kai.bill.domain.model.DateRange
 import com.kai.bill.domain.model.PendingBill
 import com.kai.bill.domain.model.PendingReason
+import com.kai.bill.domain.model.RefundCategory
 import com.kai.bill.domain.model.SourceType
 import com.kai.bill.domain.repository.BillRepository
 import com.kai.bill.domain.repository.PendingBillRepository
@@ -280,6 +281,70 @@ class IngestPipelineTest {
         assertEquals(12L, billRepository.saved.single().categoryId)
     }
 
+    // ---------------- 退款：收入侧立账、支出侧冲抵 ----------------
+
+    @Test
+    fun `退款-标记退款且不计入收入`() {
+        val result = run("退款成功 ￥12.00 已退回原账户", "com.eg.android.AlipayGphone")
+
+        assertEquals(CaptureResult.PARSED_AND_SAVED, result)
+        val bill = billRepository.saved.single()
+        assertTrue(bill.isRefund)
+        // 类型仍是收入（与来源页面的「+12.00」一致），但两侧的金额口径完全不同
+        assertEquals(BillType.INCOME, bill.type)
+        assertNull(bill.signedIncomeCents)
+        assertEquals(-1200L, bill.signedExpenseCents)
+    }
+
+    @Test
+    fun `退款-归期与分类回溯原支出`() {
+        val purchaseAt = now - 3L * 24 * 60 * 60 * 1000
+        runAt("京东 支付成功 ¥90.00", purchaseAt, "com.tencent.mm")
+        val purchase = billRepository.saved.single()
+
+        runAt("退款成功 ￥90.00 已退回原账户", now, "com.tencent.mm")
+
+        val refund = billRepository.saved.last()
+        assertTrue(refund.isRefund)
+        // 「哪个月支出的就哪个月加回去」：归期取原消费那天，而不是退款当天
+        assertEquals(purchase.tradeTimeMillis, refund.tradeTimeMillis)
+        assertEquals(purchase.categoryId, refund.categoryId)
+        assertEquals(purchase.accountId, refund.accountId)
+    }
+
+    @Test
+    fun `退款-没有可回溯的原支出时按自身归属`() {
+        runAt("退款成功 ￥7.00 已退回原账户", now, "com.eg.android.AlipayGphone")
+
+        val refund = billRepository.saved.single()
+        assertTrue(refund.isRefund)
+        assertEquals(now, refund.tradeTimeMillis)
+        // 冲抵无处可去时落在「退款」分类上，统计里单列一条负值
+        assertEquals(RefundCategory.ID, refund.categoryId)
+    }
+
+    @Test
+    fun `退款-不会把退款本身当成可冲抵的原支出`() {
+        runAt("退款成功 ￥7.00 已退回原账户", now - 60_000L, "com.eg.android.AlipayGphone")
+
+        runAt("退款成功 ￥7.00 已退回原账户", now, "com.eg.android.AlipayGphone")
+
+        // 第二笔没找到「支出」，因此不被第一笔（同为退款）吸附，仍按自身时间归期
+        val refund = billRepository.saved.last()
+        assertTrue(refund.isRefund)
+        assertEquals(now, refund.tradeTimeMillis)
+    }
+
+    @Test
+    fun `支出正文含退款字样-不判成退款`() {
+        // 「7 天无理由退款」这类文案在消费页面上很常见：判成退款会去冲抵另一笔支出
+        run("支付宝 支付成功 ¥88.50 7天无理由退款", "com.eg.android.AlipayGphone")
+
+        val bill = billRepository.saved.single()
+        assertFalse(bill.isRefund)
+        assertEquals(8850L, bill.signedExpenseCents)
+    }
+
     private fun signal(
         text: String,
         packageName: String? = null,
@@ -338,6 +403,19 @@ class IngestPipelineTest {
         ): List<Bill> = saved.filter {
             it.tradeTimeMillis in startMillis..endMillis && it.source != SourceType.MANUAL
         }
+
+        /**
+         * 与真实实现同构：取「同金额 + 更早 + 最近」的支出。
+         *
+         * 回溯窗口不在这里模拟 —— 它是实现层的启发式细节，不是接口契约。
+         */
+        override suspend fun findRefundTarget(amountCents: Long, refundTimeMillis: Long): Bill? =
+            saved.filter {
+                it.amountCents == amountCents &&
+                    it.type == BillType.EXPENSE &&
+                    !it.isRefund &&
+                    it.tradeTimeMillis <= refundTimeMillis
+            }.maxByOrNull { it.tradeTimeMillis }
     }
 
     private class FakePendingBillRepository : PendingBillRepository {

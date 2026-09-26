@@ -59,7 +59,6 @@ import com.kai.bill.core.design.theme.DarkMode
  *
  * @param note 要展示的公告
  * @param onDismiss 用户已读并关闭；调用方负责记下「这个版本看过了」
- * @param modifier 外部修饰符
  */
 @Composable
 fun ReleaseNotesDialog(

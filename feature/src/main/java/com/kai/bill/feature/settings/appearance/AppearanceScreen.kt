@@ -54,14 +54,10 @@ private const val MAX_BACKGROUND_DIM = 0.8f
  * 无状态：只消费 [AppearanceUiState]，所有改动通过回调上抛给 [AppearanceViewModel]。
  * 「跟随系统」的深色模式放在这里的分段器里选 —— 它无法在 6 宫格中预览。
  *
- * @param uiState 外观状态
- * @param onPaletteSelected 主题配色切换
- * @param onDarkModeSelected 深色模式策略切换
  * @param onBackgroundSelected 选择背景图（null 表示清除）
  * @param onCardAlphaChanged 卡片透明度变更（松手时提交）
  * @param onBackgroundDimChanged 背景遮罩深浅变更（松手时提交）
  * @param onBackgroundTransformChanged 背景图缩放 / 位置变更（取景面板点「保存」时提交）
- * @param modifier 外部修饰符
  */
 @Composable
 fun AppearanceScreen(
@@ -179,12 +175,8 @@ fun AppearanceScreen(
  * 这里也能如实渲染出「放大了多少、偏向哪边」，用户点「调整」之前就看得到当前效果。
  *
  * @param path 背景图路径；null 表示当前是默认纯色背景
- * @param scale 已保存的缩放倍数
  * @param offsetX 已保存的水平位置，-1~1
  * @param offsetY 已保存的垂直位置，-1~1
- * @param onPick 选择 / 更换照片
- * @param onClear 移除背景
- * @param onAdjust 打开取景面板
  */
 @Composable
 private fun BackgroundControl(
@@ -310,10 +302,8 @@ private fun SettingSlider(
 }
 
 /**
- * 页面通用操作按钮。
- *
- * 对包内可见（而非 `private`）：取景面板 [BackgroundAdjustOverlay] 在独立文件里，
- * 也用它保持两处按钮样式一致。
+ * 页面通用操作按钮。对包内可见（而非 `private`）：取景面板 [BackgroundAdjustOverlay]
+ * 在独立文件里也用它，保持两处按钮样式一致。
  */
 @Composable
 internal fun SettingsActionButton(
@@ -341,12 +331,7 @@ internal fun SettingsActionButton(
     }
 }
 
-/**
- * 外观页路由，负责接上 ViewModel。
- *
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
- */
+/** 外观页路由。 */
 @Composable
 fun AppearanceRoute(
     modifier: Modifier = Modifier,

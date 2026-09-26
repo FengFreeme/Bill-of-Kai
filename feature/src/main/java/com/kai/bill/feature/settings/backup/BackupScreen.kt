@@ -40,13 +40,7 @@ import com.kai.bill.feature.common.SectionTitle
  * 文件读写走 SAF（系统文件选择器），**不需要申请存储权限**：
  * 导出用 `CreateDocument` 让用户选保存位置，导入用 `OpenDocument` 让用户选文件。
  *
- * @param uiState 备份状态
  * @param suggestedFileName 导出时预填的文件名（带日期）
- * @param onExport 用户选定保存位置后回调（携带目标 URI）
- * @param onImport 用户选定备份文件后回调（携带源 URI）
- * @param onDismissMessage 点掉结果提示
- * @param onBack 返回
- * @param modifier 外部修饰符
  */
 @Composable
 fun BackupScreen(
@@ -178,7 +172,6 @@ fun BackupScreen(
     }
 }
 
-/** 单个操作卡：标题 + 说明 + 一个按钮 */
 @Composable
 private fun BackupActionCard(
     title: String,
@@ -232,13 +225,7 @@ private fun BackupActionCard(
     }
 }
 
-/**
- * 数据备份路由，负责接上 ViewModel。
- *
- * @param onBack 返回
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
- */
+/** 数据备份路由。 */
 @Composable
 fun BackupRoute(
     onBack: () -> Unit,

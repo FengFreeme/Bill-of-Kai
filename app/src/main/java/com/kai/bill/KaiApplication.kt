@@ -13,15 +13,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * 应用入口。
+ * 应用入口：挂 Hilt、冷启动播种预置数据。
  *
- * 职责：挂上 Hilt，触发整个 DI 图的生成；并在冷启动时触发一次预置数据播种。
- * 播种逻辑本身在 [DatabaseSeeder]（data 模块），这里只负责「在合适的时机调一次」。
- *
- * 注入 [NotificationCapture] 是为了在应用冷启动时即创建该单例（其 `init` 开始消费通知桥接流），
- * 保证系统绑定通知监听服务、投递事件时不会因无人订阅而被环形缓冲丢弃。
- * 注入 [CaptureController] 是为了触发其对 `captureEnabled` 的订阅，
- * 进而按用户开关启停前台保活服务。
+ * 注入 [NotificationCapture] / [CaptureController] 是为了在冷启动即创建这两个单例、触发其 `init`
+ * 订阅（通知桥接流 / `captureEnabled`）—— 否则系统投递事件会因无人订阅被丢弃，保活服务也不会启停。
  */
 @HiltAndroidApp
 class KaiApplication : Application() {
@@ -42,12 +37,12 @@ class KaiApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // 幂等播种：预置分类/账户用固定 id + IGNORE，重复调用安全
+        // NOTE: 幂等播种 —— 预置分类/账户用固定 id + IGNORE，重复调用安全
         seedScope.launch {
             runCatching { seeder.seed() }
                 .onFailure { it.printStackTrace() }
         }
-        // 冷启动顺带清一次过期待确认记录（保留 30 天）；失败不影响启动
+        // NOTE: 冷启动顺带清一次过期待确认记录（保留 30 天）；失败不影响启动
         seedScope.launch {
             runCatching { pendingBillCleaner.purgeExpired() }
                 .onFailure { it.printStackTrace() }

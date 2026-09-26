@@ -23,10 +23,8 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * 仓库接口绑定（M1 落地，M2 增补统计仓储，M4 增补解析规则仓储）。
- *
- * 接口注入 `domain`，实现在 `data`；统一在此以 `@Binds` 收口。
- * 业务层只依赖接口，将来换 `CloudBillRepository` 只需改这一处绑定。
+ * 仓库接口绑定：接口在 `domain`，实现在 `data`，统一在此以 `@Binds` 收口。
+ * 业务层只依赖接口，将来换实现只需改这一处绑定。
  */
 @Module
 @InstallIn(SingletonComponent::class)

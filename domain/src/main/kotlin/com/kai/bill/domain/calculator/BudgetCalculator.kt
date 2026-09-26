@@ -34,7 +34,6 @@ object BudgetCalculator {
      * @param monthSpentCents 本月已支出，单位「分」，非负
      * @param todaySpentCents 今日已支出，单位「分」，非负
      * @param daysRemaining 本月剩余天数（含今天），最小值为 1
-     * @param dailyMode 日预算计算模式
      * @param dailyBudgetCents 固定日预算金额，单位「分」，非负；
      *                         [DailyMode.ELASTIC] 下本参数被忽略，传 0 即可
      * @return 预算进度快照，含已用 / 剩余 / 今日可用 / 是否超支

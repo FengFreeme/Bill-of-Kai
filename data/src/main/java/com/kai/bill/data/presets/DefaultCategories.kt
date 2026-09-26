@@ -2,6 +2,7 @@ package com.kai.bill.data.presets
 
 import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.Category
+import com.kai.bill.domain.model.RefundCategory
 
 /**
  * 预置分类（支出 / 收入 / 转账）。
@@ -183,7 +184,8 @@ object DefaultCategories {
         Category(92, "婚礼礼金", "heart", "#F2775F", BillType.INCOME, 17, 3, true),
         // 其他收入(18)
         Category(93, "报销", "receipt", "#9AA5B1", BillType.INCOME, 18, 1, true),
-        Category(94, "退款", "arrow-undo", "#9AA5B1", BillType.INCOME, 18, 2, true),
+        // 退款 id 用常量：统计口径要用它（退款不参与一级上卷），见 RefundCategory
+        Category(RefundCategory.ID, "退款", "arrow-undo", "#9AA5B1", BillType.INCOME, 18, 2, true),
         Category(95, "中奖", "trophy", "#9AA5B1", BillType.INCOME, 18, 3, true)
     )
 

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.kai.bill.core.design.theme.AppPalette
@@ -19,15 +20,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 全 App 配置读写的**唯一入口**。
+ * 全 App 配置读写的**唯一入口**；`DataStore<Preferences>` 实例由 `app/di/AppModule.kt` 单例提供。
  *
- * 为什么不用 `SharedPreferences`：它是同步 I/O 且有 `apply()` 异步提交的丢数据窗口；
- * DataStore 基于事务 + Flow，天然支持「配置变更后 UI 自动刷新」，正好匹配
- * 「设置里切主题 → 首页立刻变色」的需求。
- *
- * `DataStore<Preferences>` 实例由 `app/di/AppModule.kt` 以单例提供。
- *
- * @property dataStore 偏好设置数据存储
+ * 用 DataStore 而非 `SharedPreferences`：后者同步 I/O、`apply()` 有丢数据窗口，
+ * 而 DataStore 基于事务 + Flow，「设置里切主题 → 首页立刻变色」是天然支持的。
  */
 @Singleton
 class KaiPrefs @Inject constructor(
@@ -113,10 +109,9 @@ class KaiPrefs @Inject constructor(
     /**
      * 更新自定义背景图。
      *
-     * 无论换图还是清除，都顺手把取景参数（缩放 / 位置）清掉：旧参数是照着上一张图调的，
-     * 套到新图上大概率不对，不如回到「铺满居中」让用户重新调。
+     * 换图与清除都顺手清掉取景参数（缩放 / 位置）：旧参数照着上一张图调，套到新图大概率不对。
      *
-     * @param path App 私有目录内的图片文件路径；传 null 恢复默认纯色背景
+     * @param path App 私有目录内的图片路径；传 null 恢复默认纯色背景
      */
     suspend fun updateBackgroundUri(path: String?) {
         dataStore.edit { prefs ->
@@ -132,13 +127,11 @@ class KaiPrefs @Inject constructor(
     }
 
     /**
-     * 更新背景图的取景（缩放 + 位置）。
-     *
-     * 三个值一次写入：它们描述同一张图的取景，分开写会出现「位置是新值、缩放还是旧值」的中间态。
+     * 更新背景图的取景（缩放 + 位置）；三个值一次写入 —— 分开写会出现
+     * 「位置是新值、缩放还是旧值」的中间态。
      *
      * @param scale 缩放倍数，调用方保证 ≥1
-     * @param offsetX 水平位置，-1~1
-     * @param offsetY 垂直位置，-1~1
+     * @param offsetX 水平位置，-1~1；offsetY 垂直位置，-1~1
      */
     suspend fun updateBackgroundTransform(scale: Float, offsetX: Float, offsetY: Float) {
         dataStore.edit { prefs ->
@@ -186,25 +179,45 @@ class KaiPrefs @Inject constructor(
     }
 
     /**
-     * 更新无障碍服务的**真实连通态**。
+     * 更新无障碍服务的真实连通态（由 `KaiAccessibilityCore` 在 `onServiceConnected` / `onUnbind` 写入）。
      *
-     * 由 `KaiAccessibilityService` 在 `onServiceConnected` / `onUnbind` 写入。
-     * 它与「系统设置里勾选了没有」是两个不同的信号，UI 需要同时看到才能判断
-     * 「是没授权，还是授权了但服务没跑起来」。
+     * 与「系统设置里勾选了没有」是两个信号，UI 要同时看到才能判断「是没授权，还是没跑起来」。
      */
     suspend fun setAccessibilityEnabled(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[Keys.ACCESSIBILITY_ENABLED] = enabled }
     }
 
     /**
-     * 记录一次采集诊断：最近结果编码、原始文本、采集时间三者一次性写入，
-     * 供 UI 区分「采集成功」与「真正记账成功」，并展示原文便于排查解析失败。
+     * 记一次「采集链路体检不通」，返回连续失败次数（含本次）。
      *
-     * **调用方必须先确认该结果通过了金额闸门**（`CaptureResult.passedAmountGate`），
-     * 没抽到金额的通知请走 [recordCaptureSeen]。历史列表只收带金额的记录，
-     * 否则「账单已出」这类高频无金额通知会把列表刷满，真正要查的那条反而被顶掉。
+     * 由 `CaptureKeepAlive` 写入；用「连续几次」而非「一次」触发提醒，
+     * 避免刚开机 / 刚重启进程时服务还没连上就误报。
+     */
+    suspend fun bumpCaptureDownStreak(): Int {
+        var streak = 0
+        dataStore.edit { prefs ->
+            streak = (prefs[Keys.CAPTURE_DOWN_STREAK] ?: 0) + 1
+            prefs[Keys.CAPTURE_DOWN_STREAK] = streak
+        }
+        return streak
+    }
+
+    /**
+     * 体检恢复正常时清零，让下一次故障能重新提醒。
      *
-     * @param atMillis 通知发布时间；历史列表按写入顺序倒序展示，不需要再排序
+     * 「一段故障只提醒一次」是刻意的：每 15 分钟响一次用户就会关掉通道，提醒彻底失效。
+     */
+    suspend fun resetCaptureDownStreak() {
+        dataStore.edit { prefs -> prefs[Keys.CAPTURE_DOWN_STREAK] = 0 }
+    }
+
+    /**
+     * 记录一次采集诊断：结果编码、原始文本、采集时间三者一次性写入，供 UI 区分「采集成功」
+     * 与「真正记账成功」，并展示原文便于排查解析失败。
+     *
+     * **调用方必须先确认该结果通过了金额闸门**（`CaptureResult.passedAmountGate`），没抽到金额的
+     * 通知请走 [recordCaptureSeen] —— 历史列表只收带金额的记录，否则「账单已出」这类高频无金额
+     * 通知会把列表刷满、把真正要查的那条顶掉。
      */
     suspend fun recordCaptureDiagnostic(result: String, raw: String, atMillis: Long) {
         dataStore.edit { prefs ->
@@ -236,17 +249,12 @@ class KaiPrefs @Inject constructor(
     }
 
     /**
-     * 记录一次**类别信号**的处理结果（回填 / 建账 / 放弃）。
+     * 记录一次**类别信号**的处理结果（回填 / 建账 / 放弃）。与通知诊断分开存：两者是并行的
+     * 两条链路，写进同一个键会互相覆盖，用户就分不清「是通知没到」还是「页面读到了但没匹配上」。
      *
-     * 与通知诊断分开存：两者是并行的两条链路，写进同一个键会互相覆盖，
-     * 用户就分不清「是通知没到」还是「页面读到了但没匹配上」。
-     *
-     * @param result 结果编码，取值见 `ReconcileOutcome`
      * @param text 信号原文；**可能含页面隐私，只截断后本地展示，绝不写日志**
-     * @param atMillis 处理时刻（毫秒）
-     * @param keepHistory 是否进历史列表。**一切照旧写「最近一条」，只有历史是可跳过的** ——
-     *           高频噪声（如「没抽到金额」）不该把真正要查的那条顶掉，
-     *           但「最近一条」反映的正是此刻的状态，跳过了反而看不出卡在哪
+     * @param keepHistory 是否进历史列表：「最近一条」照旧写，只有历史可跳过 ——
+     *           高频噪声（如「没抽到金额」）不该把真正要查的那条顶掉
      */
     suspend fun recordSignalResult(
         result: String,
@@ -268,11 +276,9 @@ class KaiPrefs @Inject constructor(
     }
 
     /**
-     * 记录一次**确认卡片的投递结果**。
-     *
-     * 存在的理由见 [CaptureState.cardDelivery]：这是整套链路里唯一会「静默失败」的环节，
-     * 失败时用户侧毫无反馈。把结果（尤其是异常信息）留下来，
-     * 用户才能在引导页直接看到「为什么卡片没弹」，而不是靠反复付真钱去猜。
+     * 记录一次**确认卡片的投递结果**（理由见 [CaptureState.cardDelivery]）：这是整套链路里唯一会
+     * 「静默失败」的环节，失败时用户侧毫无反馈；把结果（尤其异常信息）留下来，用户才能在引导页
+     * 直接看到「为什么卡片没弹」，而不是靠反复付真钱去猜。
      *
      * @param value 结果编码或失败原因，见 [CaptureState.cardDelivery]
      */
@@ -281,11 +287,8 @@ class KaiPrefs @Inject constructor(
     }
 
     /**
-     * 记录最近一次**提示条投递**的结果。
-     *
-     * 与 [recordCardDelivery] 同一套理由（见 [CaptureState.hintDelivery]）：两者都是
-     * `WindowManager.addView` 那条会静默失败的路径，只是内容不同 ——
-     * 卡片那边查「为什么没弹卡片」，提示条这边查「为什么没弹提示」。
+     * 记录最近一次**提示条投递**的结果，与 [recordCardDelivery] 同一套理由
+     * （见 [CaptureState.hintDelivery]）：都是 `WindowManager.addView` 那条会静默失败的路径。
      *
      * @param value 结果编码或失败原因，见 [CaptureState.hintDelivery]
      */
@@ -324,6 +327,29 @@ class KaiPrefs @Inject constructor(
         dataStore.edit { prefs -> prefs[Keys.LAST_SEEN_RELEASE_VERSION] = version }
     }
 
+    /**
+     * 是否已经走过「首次启动引导」。
+     *
+     * 只决定第一次打开 App 时要不要直接把用户送进引导页：新装用户首先要知道的是
+     * 「该开哪些权限、开完怎么用」，而不是一份他还没经历过的版本更新说明。
+     *
+     * @return true 表示已经引导过
+     */
+    suspend fun firstLaunchDone(): Boolean = dataStore.data
+        .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
+        .first()[Keys.FIRST_LAUNCH_DONE] ?: false
+
+    /**
+     * 记下「首次启动引导已展示」，此后不再自动跳引导页。
+     *
+     * 与 [markReleaseVersionSeen] 不同，这里**在跳转前就写**：引导页是用户随时能从
+     * 「权限与采集」再进的常驻页面，跳转即使失败（进程被杀）也不会丢东西，
+     * 不存在「写早了把引导吞掉」的风险。
+     */
+    suspend fun markFirstLaunchDone() {
+        dataStore.edit { prefs -> prefs[Keys.FIRST_LAUNCH_DONE] = true }
+    }
+
     private object Keys {
         val THEME_PALETTE = stringPreferencesKey("theme_palette")
         val DARK_MODE = stringPreferencesKey("dark_mode")
@@ -337,6 +363,7 @@ class KaiPrefs @Inject constructor(
         val CAPTURE_SERVICE_ALIVE = booleanPreferencesKey("capture_service_alive")
         val NOTIFICATION_LISTENER_ENABLED = booleanPreferencesKey("notification_listener_enabled")
         val ACCESSIBILITY_ENABLED = booleanPreferencesKey("accessibility_enabled")
+        val CAPTURE_DOWN_STREAK = intPreferencesKey("capture_down_streak")
         val CAPTURE_LAST_SUCCESS_AT = longPreferencesKey("capture_last_success_at")
         val CAPTURE_ENABLED = booleanPreferencesKey("capture_enabled")
         val CAPTURE_LAST_RESULT = stringPreferencesKey("capture_last_result")
@@ -350,6 +377,7 @@ class KaiPrefs @Inject constructor(
         val HINT_DELIVERY = stringPreferencesKey("hint_delivery")
         val ACCESSIBILITY_DEBUG = stringPreferencesKey("a11y_debug")
         val LAST_SEEN_RELEASE_VERSION = stringPreferencesKey("last_seen_release_version")
+        val FIRST_LAUNCH_DONE = booleanPreferencesKey("first_launch_done")
     }
 }
 

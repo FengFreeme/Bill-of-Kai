@@ -8,10 +8,8 @@ package com.kai.bill.domain.model
  *
  * @property id 主键，0 表示尚未落库
  * @property categoryId 分类 ID；**为 null 表示总额预算**。预留分类预算，将来支持时无需改表
- * @property period 预算周期
  * @property amountCents 月预算金额，单位「分」；0 表示用户未设置预算
  * @property startDay 周期起始日，取值 1~31，用于「发薪日起算」；当月不足该天数时退化为月末
- * @property dailyMode 日预算计算模式
  * @property dailyAmountCents 固定日预算金额，单位「分」；仅 [DailyMode.FIXED] 生效
  * @property carryOver 是否把本月结余结转到下月
  * @property enabled 是否启用；关闭后首页不渲染预算卡，但保留历史设置便于重新打开

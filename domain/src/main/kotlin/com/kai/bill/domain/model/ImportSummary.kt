@@ -9,7 +9,6 @@ package com.kai.bill.domain.model
  * @property billsImported 新增成功的账单条数
  * @property billsSkipped 因重复或分类缺失被跳过的账单条数
  * @property categoriesCreated 新建的分类数（本机没有的才会建）
- * @property accountsCreated 新建的账户数
  * @property budgetsRestored 恢复的预算条数
  */
 data class ImportSummary(

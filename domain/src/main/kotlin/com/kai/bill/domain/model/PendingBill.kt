@@ -12,7 +12,6 @@ package com.kai.bill.domain.model
  *
  * @property amountCents 金额，单位「分」，恒为正数
  * @property suggestedType 建议方向；null 表示连方向都判不出来
- * @property suggestedCategoryId 建议分类
  * @property suggestedAccountId 建议账户（按通知来源 App 判定）
  * @property suggestedCountInStats 建议是否计入统计；「自己的钱搬家」与红包固定为 false
  * @property matchedKeyword 命中的词，列表用它解释「为什么把你叫过来」

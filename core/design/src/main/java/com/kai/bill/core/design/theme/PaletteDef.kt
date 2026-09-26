@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.Color
  */
 
 // ---------- 功能色：三套主题共用，仅随深浅模式调整亮度 ----------
-// 设计意图：换主题后「红色仍然是支出」不能变，否则会破坏用户对颜色的直觉。
+// WHY: 「红色仍然是支出」不能随主题变，否则会破坏用户对颜色的直觉（详见 AppPalette）
 private val ExpenseLight = Color(0xFFF2775F)   // 支出 · 珊瑚红（比正红柔和，降低焦虑感）
 private val ExpenseDark = Color(0xFFFF8A75)
 private val IncomeLight = Color(0xFF3FC79A)    // 收入 · 薄荷绿
@@ -260,24 +260,14 @@ private val LilacSet = PaletteSet(
     darkExt = LilacDarkExtended
 )
 
-/**
- * 根据主题枚举取出对应的配色集合。
- *
- * @param palette 主题配色
- * @return 该主题的浅色与深色完整定义
- */
+/** 取主题对应的浅/深配色与扩展色 */
 fun paletteSetFor(palette: AppPalette): PaletteSet = when (palette) {
     AppPalette.MINT -> MintSet
     AppPalette.SKY -> SkySet
     AppPalette.LILAC -> LilacSet
 }
 
-/**
- * 主题选择器的预览用色：取该主题的主色，用于 6 宫格色块展示。
- *
- * @param palette 主题配色
- * @return 该主题在浅色模式下的主色
- */
+/** 主题选择器的 6 宫格色块用色 */
 fun previewColorOf(palette: AppPalette): Color = when (palette) {
     AppPalette.MINT -> Color(0xFF5CB34D)
     AppPalette.SKY -> Color(0xFF3E8FD8)

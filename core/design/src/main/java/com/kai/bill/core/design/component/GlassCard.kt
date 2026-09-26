@@ -33,18 +33,11 @@ private const val PRESSED_SCALE = 0.975f
 /**
  * 纯色表面卡片 —— 全 App 最基础的容器组件。
  *
- * 历史命名保留为 [GlassCard]，实现已改为不透明 surface 分组卡：
- * 1. 纯色填充（`surface` / `surfaceVariant`）
- * 2. 无描边、无阴影（边缘效果对齐 [CtaButton]：仅靠圆角色块与背景分层）
- * 3. 按压时缩放到 0.975 并弹性回弹
+ * 历史命名保留为 [GlassCard]，实现已是纯色 surface 分组卡：无描边/阴影/半透明（边缘效果对齐
+ * [CtaButton]，仅靠圆角色块与背景分层），按压缩放并弹性回弹；无 blur，列表内大量使用也不掉帧。
  *
- * PERF: 无 blur、无阴影、无描边、无半透明渐变，列表内大量使用也不会掉帧。
- *
- * @param shape 卡片形状，默认 24dp 圆角
- * @param strong 是否使用更高对比填充（设置项 / 预览格等需要更「实」的场景）
- * @param onClick 点击回调；为 null 时不可点击
- * @param modifier 外部修饰符
- * @param content 卡片内容
+ * @param strong 用 surfaceVariant 提高对比（设置项 / 预览格等需要更「实」的场景）
+ * @param onClick 为 null 时不可点击
  */
 @Composable
 fun GlassCard(
@@ -56,8 +49,7 @@ fun GlassCard(
 ) {
     val colors = AppTheme.color
     val cardAlpha = LocalCardAlpha.current
-    // strong：用 surfaceVariant 提高对比；普通卡用 surface 纯色分组；
-    // alpha 由主题注入，配合自定义背景图实现「卡片半透明」
+    // WHY: strong 用 surfaceVariant 提高对比，普通卡用 surface；alpha 由主题注入以配合背景图
     val fill = (if (strong) colors.surfaceVariant else colors.surface).copy(alpha = cardAlpha)
 
     val interactionSource = remember { MutableInteractionSource() }
@@ -75,7 +67,7 @@ fun GlassCard(
             .background(color = fill)
             .then(
                 if (onClick != null) {
-                    // indication 传 null：卡片自带 scale 反馈，不需要默认水波纹
+                    // NOTE: indication 传 null —— 卡片自带 scale 反馈，不需要默认水波纹
                     Modifier.clickable(
                         interactionSource = interactionSource,
                         indication = null,

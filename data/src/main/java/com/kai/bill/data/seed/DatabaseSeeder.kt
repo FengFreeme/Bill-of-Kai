@@ -14,10 +14,9 @@ import javax.inject.Singleton
  * 因此重复调用天然幂等：已存在则跳过，不会长出重复行。这里在每次冷启动时调用一次即可，
  * 无需额外「是否已播种」标志位。
  *
- * **解析规则已不再播种**：M4 的 13 条整包正则被四级路由的词表取代（P0 为代码常量，
- * 见 `DefaultMatchKeywords`）。`parse_rule` 表与 `ParseRuleRepository` 保留给 P1
- * 改造成 `match_keyword` 词表后复用 —— 届时播种策略要一并改掉「按主键覆盖」的行为，
- * 否则用户编辑过的词条会在每次冷启动被打回原形。
+ * **这里不播种解析规则**：解析走 `DefaultMatchKeywords` 常量词表，`parse_rule` 表与
+ * `ParseRuleRepository` 留给 P1 改造成 `match_keyword` 词表后复用 —— 届时播种策略要一并
+ * 改掉「按主键覆盖」的行为，否则用户编辑过的词条会在每次冷启动被打回原形。
  */
 @Singleton
 class DatabaseSeeder @Inject constructor(

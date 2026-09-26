@@ -42,7 +42,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 权限自检与引导。M4 落地：监听权限 / 电池优化 / 厂商自启动 / 采集开关；M-L2 增补无障碍（分类识别）。 */
+/** 权限自检与引导：监听权限 / 电池优化 / 厂商自启动 / 采集开关，以及无障碍（分类识别）。 */
 @Composable
 fun PermissionCheckScreen(
     modifier: Modifier = Modifier,
@@ -116,12 +116,16 @@ fun PermissionCheckScreen(
                 onAction = { viewModel.onStepAction(step.action) }
             )
         }
+
     }
 
     if (showHistory) {
         CaptureHistoryDialog(
             entries = captureState.captureRecent,
-            onDismiss = { showHistory = false }
+            onDismiss = { showHistory = false },
+            // 与识别记录说同一套话：右侧标签就是「这笔走了哪个渠道的规则」
+            subtitle = "只记抽到金额的通知，最多 $CAPTURE_DIAG_LIMIT 条；" +
+                "识别方式区分「支付宝专属 / 微信专属 / 银行专属 / 短信专属」，点一行看完整内容"
         )
     }
 
@@ -131,8 +135,9 @@ fun PermissionCheckScreen(
             entries = captureState.signalRecent,
             onDismiss = { showSignalHistory = false },
             title = "最近识别记录",
-            subtitle = "只记「对账单产生了影响」的信号，最多 $CAPTURE_DIAG_LIMIT 条，点一行看完整内容",
-            emptyText = "还没有记录。识别到账单内容并补上分类 / 补记一笔后会出现在这里。",
+            subtitle = "只记产生了影响的信号（建账 / 补分类 / 待确认 / 重复跳过），最多 $CAPTURE_DIAG_LIMIT 条；" +
+                "识别方式区分「支付宝专属 / 微信专属 / 通用」，点一行看完整内容",
+            emptyText = "还没有记录。打开微信/支付宝账单详情页后应出现；若仍为空，说明页型判定未过、信号未产出。",
             labelOf = ::signalResultLabel,
             hintOf = ::signalResultHint,
             colorOf = { signalResultColor(it) }
@@ -191,9 +196,8 @@ private fun StatusCard(
     onShowHistory: () -> Unit = {},
     onReconnect: () -> Unit = {}
 ) {
-    // 三态：未授权 / 已授权但服务断连 / 正常监听。
-    // listenerEnabled = 系统「通知读取」权限是否勾选；listenerConnected = KaiNotificationListener
-    // 在 onListenerConnected/Disconnected 写入的真实连接态（见 CaptureState.notificationListenerEnabled）。
+    // 三态：未授权 / 已授权但服务断连 / 正常监听。listenerEnabled 是系统权限是否勾选，
+    // listenerConnected 是监听服务写入的真实连接态（见 CaptureState.notificationListenerEnabled）。
     val (dotColor, statusText, showReconnect) = when {
         !listenerEnabled -> Triple(Color(0xFFFF9800), "通知监听未开启（未授权）", false)
         !listenerConnected -> Triple(Color(0xFFF44336), "已授权但服务未连接", true)
@@ -296,9 +300,8 @@ internal fun resultLabel(code: String): String = when (code) {
 }
 
 /**
- * 各结果对应的排查引导（M6 异常排查增强）。
- *
- * 诊断历史弹窗展开一行时复用它，两处文案是同一套解释，不该各写一份。
+ * 各结果对应的排查引导。诊断历史弹窗展开一行时复用，
+ * 与 [resultLabel] 是同一套解释，不该各写一份。
  */
 internal fun resultHint(code: String): String = when (code) {
     "REPLAY" -> "同一条系统通知被更新后重新推送，已按同一笔处理，不会重复记账。"
@@ -386,8 +389,7 @@ private fun AccessibilityCard(
                 }
             }
 
-            // —— 以下与「采集状态」卡同构：时间 → 结果 → 释义 → 原文 → 历史入口 → 说明 ——
-            // 两条链路在引导页上长得一样，用户不必为「通知」和「页面识别」各学一套看法。
+            // 以下与「采集状态」卡同构：两条链路长得一样，用户不必各学一套看法。
             if (lastAtMillis > 0L) {
                 Text(
                     text = "最近处理时间：${formatTime(lastAtMillis)}",
@@ -420,10 +422,8 @@ private fun AccessibilityCard(
                 )
             }
 
-            // 卡片靠**无障碍悬浮层**显示，不需要任何权限；唯一的条件是服务真的在跑
-            // （上面的绿点已经反映）。这里给一个不花钱的验证入口 ——
-            // 这个功能曾经「静默不生效」过（系统不抛异常、不留日志），
-            // 没有入口就只能靠反复付真钱去试。
+            // 卡片靠无障碍悬浮层显示，唯一条件是服务真的在跑；给一个不花钱的验证入口
+            //（该功能曾静默不生效，系统不抛异常也不留日志）。
             if (granted) {
                 OutlinedButton(onClick = onTestCard, modifier = Modifier.fillMaxWidth()) {
                     Text(text = "测试确认卡片")
@@ -497,8 +497,8 @@ private fun AccessibilityCard(
 /**
  * 信号处理结果编码 → 用户看得懂的一句话。
  *
- * 取值与 `ReconcileOutcome` 一一对应；**新增枚举项时必须同步这张表**，
- * 否则用户会看到 `ENRICHED` 这样的原始字符串 —— 与通知诊断的 [resultLabel] 是同一条约定。
+ * 取值与 `ReconcileOutcome` 一一对应；新增枚举项时必须同步这张表，
+ * 否则会露出原始字符串（与通知诊断的 [resultLabel] 同一条约定）。
  */
 internal fun signalResultLabel(code: String): String = when (code) {
     "ENRICHED" -> "已补全分类"
@@ -506,7 +506,7 @@ internal fun signalResultLabel(code: String): String = when (code) {
     "DUPLICATE" -> "已有一笔，未重复记账"
     "PENDING" -> "待确认（等你拍板）"
     "AMBIGUOUS" -> "附近有多笔，未自动处理"
-    "NO_MATCH" -> "识别到内容，但没匹配到分类"
+    "NO_MATCH" -> "识别到内容，等你选分类"
     "NO_AMOUNT" -> "识别到内容，但没抽到金额"
     "EXCLUDED" -> "已忽略（失败 / 提醒 / 营销类）"
     "FAILED" -> "处理失败"
@@ -514,9 +514,8 @@ internal fun signalResultLabel(code: String): String = when (code) {
 }
 
 /**
- * 信号处理结果的配色；与采集诊断同一套取向 ——
- * **「确实记上了」用绿色，「需要用户看一眼」用橙色，其余统一灰掉**，
- * 用户扫一眼就能分辨「这条成了没有」，不必逐条读文案。
+ * 信号处理结果配色，与采集诊断同一套取向：
+ * 「确实记上了」绿、「需要用户看一眼」橙、其余灰，扫一眼即可分辨。
  */
 @Composable
 internal fun signalResultColor(code: String): Color = when (code) {
@@ -532,7 +531,7 @@ internal fun signalResultHint(code: String): String = when (code) {
     "DUPLICATE" -> "同一笔已经记过了（通常是通知先到），没有重复添加。"
     "PENDING" -> "方向判不出来，已加入待审核记录，可去「设置 → 待审核记录」处理。"
     "AMBIGUOUS" -> "同一时间段有多笔待归类账单，无法确定是哪一笔，因此没有自动修改。"
-    "NO_MATCH" -> "读到了页面内容，但没命中任何分类词；可在账单里手动改分类。"
+    "NO_MATCH" -> "读到了页面内容但没命中分类词，已弹出卡片让你直接选一个分类。"
     "NO_AMOUNT" -> "读到了页面内容但没抽到可信金额，因此没有自动记一笔。"
     "EXCLUDED" -> "支付失败、活动推送等内容会被自动忽略，属正常行为。"
     "FAILED" -> "处理过程中出现异常，可查看采集诊断记录。"

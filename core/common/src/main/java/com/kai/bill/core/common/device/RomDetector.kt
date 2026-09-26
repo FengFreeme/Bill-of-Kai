@@ -42,7 +42,7 @@ object RomDetector {
      * @return 识别结果；无法匹配时返回 [Rom.UNKNOWN]
      */
     fun current(): Rom {
-        // 同时比对 MANUFACTURER 与 BRAND：部分机型两者不一致（如荣耀可能报 HONOR 或 HUAWEI）
+        // NOTE: 同时比对 MANUFACTURER 与 BRAND —— 部分机型两者不一致（如荣耀可能报 HONOR 或 HUAWEI）
         val manufacturer = Build.MANUFACTURER.orEmpty().lowercase()
         val brand = Build.BRAND.orEmpty().lowercase()
 
@@ -52,7 +52,7 @@ object RomDetector {
             manufacturer.contains("huawei") || brand.contains("huawei") -> Rom.HUAWEI
             manufacturer.contains("xiaomi") || brand.contains("xiaomi") -> Rom.XIAOMI
             manufacturer.contains("oneplus") || brand.contains("oneplus") -> Rom.ONEPLUS
-            // realme 是 OPPO 子品牌，沿用 ColorOS 的自启动 / 后台管理入口
+            // WHY: realme 是 OPPO 子品牌，沿用 ColorOS 的自启动 / 后台管理入口
             manufacturer.contains("oppo") || brand.contains("oppo") || brand.contains("realme") -> Rom.OPPO
             manufacturer.contains("samsung") -> Rom.SAMSUNG
             manufacturer.contains("google") -> Rom.GOOGLE

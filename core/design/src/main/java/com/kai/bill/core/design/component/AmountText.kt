@@ -17,16 +17,12 @@ import com.kai.bill.core.design.theme.TABULAR_NUMBERS
 /**
  * 金额文本。
  *
- * 铁律 3 的落地示例：本组件**只接收 [Color]，不认识任何业务类型**
- * （不知道什么是支出/收入/转账），因此设计系统无需依赖 `:domain`。
+ * 只接收 [Color]，不认识任何业务类型（不知道什么是支出/收入/转账），因此设计系统无需依赖 `:domain`；
  * 「按账单类型决定颜色」的语义封装放在 `feature/common/BillAmountText`。
- *
- * 强制开启等宽数字（tnum）：否则金额列表里的小数点对不齐，视觉上非常廉价。
+ * 强制开启等宽数字（tnum），否则金额列表里的小数点对不齐。
  *
  * @param text 已格式化好的金额字符串，如 `-¥25.00`
- * @param color 金额颜色，由调用方根据业务语义传入
- * @param style 文本样式，默认 `bodyMedium`
- * @param modifier 外部修饰符
+ * @param color 由调用方按业务语义传入
  */
 @Composable
 fun AmountText(

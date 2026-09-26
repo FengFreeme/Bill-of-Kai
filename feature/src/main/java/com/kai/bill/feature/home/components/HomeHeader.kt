@@ -27,7 +27,6 @@ import com.kai.bill.core.design.theme.DarkMode
  * 不引入 material-icons；头像用几何剪影，避免额外依赖。
  *
  * @param dateLabel 今日日期文案（如「9月14日」），拼在「今日」之后
- * @param modifier 外部修饰符
  */
 @Composable
 fun HomeHeader(dateLabel: String, modifier: Modifier = Modifier) {

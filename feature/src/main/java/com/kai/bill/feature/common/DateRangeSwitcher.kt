@@ -39,7 +39,6 @@ enum class DateRangeKind(val label: String) {
  *
  * @param selected 当前选中的粒度
  * @param onSelect 切换回调
- * @param modifier 外部修饰符
  */
 @Composable
 fun DateRangeSwitcher(

@@ -20,35 +20,36 @@ import java.time.ZoneId
  * 内存聚合这点开销完全可以忽略，换来的是「统计口径与明细列表完全一致」。
  *
  * **口径必须与 SQL 一致**（改动任一侧都要同步另一侧）：
- * 1. 参与聚合的账单判据是 [countsIn]，与 `StatsDao` 的 `(type = 'TRANSFER' OR countInStats = 1)` 一一对应
+ * 1. 参与聚合的判据与带符号金额都出自 `signedAmountIn`，与 `StatsDao` 里
+ *    `(type = 'TRANSFER' OR countInStats = 1)` + `CASE WHEN isRefund = 1 ... END` 一一对应
  * 2. 一律按 [Bill.tradeTimeMillis] 归桶，不用 `createdAt`
- * 3. 金额恒为 `Long`（分）
+ * 3. 金额恒为 `Long`（分）；**退款是负值**，因此求和一律用带符号金额，
+ *    不能直接 `sumOf { it.amountCents }`
  */
 internal object StatsAggregator {
 
     /**
-     * 该账单是否参与 [type] 维度的聚合。
+     * 该账单在 [type] 维度里的带符号金额；null 表示不参与该维度。
      *
-     * - 支出 / 收入维度：沿用 [Bill.isCounted]（转账、还款、未计入统计的流水都不算）；
-     * - **转账维度反过来**：算所有转账，也不看 `countInStats` —— 那个开关对转账本就是
-     *   空操作（[Bill.isCounted] 已把转账排除在收支之外），用户切到转账维度就是想看这些流水。
+     * 支出 / 收入维度沿用 [Bill.signedExpenseCents] / [Bill.signedIncomeCents]（退款是支出侧负项、
+     * 不计入收入）；转账维度反过来只看类型、不看 `countInStats`（那个开关对转账本是空操作）。
+     * 返回「金额或 null」而不是「是否参与 + 金额」两个函数，避免出现「参与了但按 0 计入」。
      */
-    private fun Bill.countsIn(type: BillType): Boolean =
-        if (type == BillType.TRANSFER) {
-            this.type == BillType.TRANSFER
-        } else {
-            isCounted && this.type == type
-        }
+    private fun Bill.signedAmountIn(type: BillType): Long? = when (type) {
+        BillType.TRANSFER -> if (this.type == BillType.TRANSFER) amountCents else null
+        BillType.EXPENSE -> signedExpenseCents
+        BillType.INCOME -> signedIncomeCents
+    }
 
-    /** 分类维度的聚合金额，按金额降序 */
+    /** 分类维度的聚合金额（含退款的负值），按金额降序 */
     fun categoryAmounts(bills: List<Bill>, type: BillType): List<CategoryAmount> =
         bills.asSequence()
-            .filter { it.countsIn(type) }
-            .groupBy { it.categoryId }
+            .mapNotNull { bill -> bill.signedAmountIn(type)?.let { bill to it } }
+            .groupBy { (bill, _) -> bill.categoryId }
             .map { (categoryId, group) ->
                 CategoryAmount(
                     categoryId = categoryId,
-                    amountCents = group.sumOf { it.amountCents },
+                    amountCents = group.sumOf { (_, signed) -> signed },
                     billCount = group.size
                 )
             }
@@ -57,27 +58,27 @@ internal object StatsAggregator {
     /** 账户维度的聚合金额，按金额降序；`accountId` 为 null 单列一项，不并入任何账户 */
     fun accountAmounts(bills: List<Bill>, type: BillType): List<AccountAmount> =
         bills.asSequence()
-            .filter { it.countsIn(type) }
-            .groupBy { it.accountId }
+            .mapNotNull { bill -> bill.signedAmountIn(type)?.let { bill to it } }
+            .groupBy { (bill, _) -> bill.accountId }
             .map { (accountId, group) ->
                 AccountAmount(
                     accountId = accountId,
-                    amountCents = group.sumOf { it.amountCents }
+                    amountCents = group.sumOf { (_, signed) -> signed }
                 )
             }
             .sortedByDescending { it.amountCents }
 
-    /** 区间概览：支出 / 收入两侧一次遍历算完（转账天然不算，它是独立维度） */
+    /**
+     * 区间概览：支出 / 收入两侧一次遍历算完（转账天然不算，它是独立维度）。
+     *
+     * 两个和各取带符号金额：退款减支出、且不进收入 —— 同一笔不会两头都记。
+     */
     fun overview(bills: List<Bill>): Overview {
         var expenseCents = 0L
         var incomeCents = 0L
         bills.forEach { bill ->
-            if (!bill.isCounted) return@forEach
-            when (bill.type) {
-                BillType.EXPENSE -> expenseCents += bill.amountCents
-                BillType.INCOME -> incomeCents += bill.amountCents
-                BillType.TRANSFER -> Unit
-            }
+            expenseCents += bill.signedExpenseCents ?: 0L
+            incomeCents += bill.signedIncomeCents ?: 0L
         }
         return Overview(expenseCents = expenseCents, incomeCents = incomeCents)
     }
@@ -90,12 +91,12 @@ internal object StatsAggregator {
         zone: ZoneId
     ): List<TrendPoint> =
         bills.asSequence()
-            .filter { it.countsIn(type) }
-            .groupBy { bucketStartMillis(it.tradeTimeMillis, granularity, zone) }
+            .mapNotNull { bill -> bill.signedAmountIn(type)?.let { bill to it } }
+            .groupBy { (bill, _) -> bucketStartMillis(bill.tradeTimeMillis, granularity, zone) }
             .map { (startMillis, group) ->
                 TrendPoint(
                     startMillis = startMillis,
-                    amountCents = group.sumOf { it.amountCents }
+                    amountCents = group.sumOf { (_, signed) -> signed }
                 )
             }
             .sortedBy { it.startMillis }

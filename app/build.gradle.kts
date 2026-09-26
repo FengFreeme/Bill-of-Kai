@@ -49,7 +49,7 @@ android {
         // versionCode 由 Git 提交数自动递增（见文件上方 gitCommitCount）
         // versionName 面向用户，语义化版本，手动维护
         versionCode = gitCommitCount
-        versionName = "1.2.0"
+        versionName = "1.3.0"
     }
 
     signingConfigs {

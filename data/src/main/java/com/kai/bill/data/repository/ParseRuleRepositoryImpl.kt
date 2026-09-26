@@ -11,9 +11,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * [ParseRuleRepository] 的 Room 实现。
- */
 @Singleton
 class ParseRuleRepositoryImpl @Inject constructor(
     private val dao: ParseRuleDao

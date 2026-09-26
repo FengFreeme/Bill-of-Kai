@@ -10,7 +10,9 @@ import com.kai.bill.data.parser.DedupKey
 import com.kai.bill.data.parser.DirectionHit
 import com.kai.bill.data.parser.DirectionRouter
 import com.kai.bill.data.parser.MatchKeywordTables
+import com.kai.bill.data.parser.RefundDetector
 import com.kai.bill.domain.model.Bill
+import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.CaptureResult
 import com.kai.bill.domain.model.PendingBill
 import com.kai.bill.domain.model.PendingReason
@@ -24,10 +26,7 @@ import javax.inject.Singleton
 /**
  * 「原始文本 → 账单」的四级路由流水线。
  *
- * 取代旧实现里「一条正则同时决定 认不认 / 金额 / 收支 / 分类」的整包式匹配：
- * 每级只做一件事、输入输出都是纯数据，因此每一级都能单独单测，
- * 出错时也能明确回答「卡在哪一级」（旧实现只有 `NO_RULE` / `NO_AMOUNT` 两个失败值，
- * 分不出是方向判不出还是分类没命中）。
+ * 每级只做一件事、输入输出都是纯数据：既好单独单测，出错时也能明确回答「卡在哪一级」。
  *
  * ```
  * S1 AmountGate        金额闸门   抽不到 → NO_AMOUNT（静默）
@@ -37,9 +36,8 @@ import javax.inject.Singleton
  * S5                   去重落库   dedupHash 唯一索引；冲突即重复
  * ```
  *
- * 与统计口径的关系：`countInStats` 由**类型推导**（[com.kai.bill.data.parser.DirectionHit.countInStats]
- * = `type != TRANSFER`），不再像旧实现那样硬编码 `true` —— 否则还款类会混进「本月支出」。
- * 统计 SQL 一行未改，正确性仍由 `StatsDao` 与 `Bill.isCounted` 守着。
+ * `countInStats` 由**类型推导**（[com.kai.bill.data.parser.DirectionHit.countInStats]
+ * = `type != TRANSFER`）：硬编码 `true` 会让还款类混进「本月支出」。
  */
 @Singleton
 class IngestPipeline @Inject constructor(
@@ -64,7 +62,7 @@ class IngestPipeline @Inject constructor(
      * @param source 采集来源
      * @param packageName 通知来源包名，用于 S4 账户路由（短信来源传 null）
      * @param eventTimeMillis 事件发生时间；通知场景传 `postTime`，比「处理时刻」更接近真实交易时间。
-     *        为 null 时退回 [Clock.nowMillis]（与旧实现一致）
+     *        为 null 时退回 [Clock.nowMillis]
      */
     suspend fun run(
         rawText: String,
@@ -123,6 +121,16 @@ class IngestPipeline @Inject constructor(
         val categoryId = categoryRouter.resolve(rawText, type, source, keywords, signals).categoryId
         val accountId = accountRouter.resolve(packageName, source)
 
+        // 退款是同一笔支出的逆操作：统计上要从支出里减掉，且必须减在原消费的月份与分类上。
+        // 关联靠启发式（规则与窗口在仓储实现层），回溯不到就退回按退款自身归属。
+        val isRefund = type == BillType.INCOME &&
+            RefundDetector.isRefund(rawText, direction.matchedKeyword, categoryId)
+        val refundTarget = if (isRefund) {
+            billRepository.findRefundTarget(amountCents = amountCents, refundTimeMillis = tradeTime)
+        } else {
+            null
+        }
+
         // —— S5 去重落库 ——
         // 第二道去重（时间窗）：唯一索引只认「同一秒格」，两条投递跨过秒格边界就会漏网；
         // 这里按实际时间差再判一次，与秒格对齐无关。两道任一命中即视为重复。
@@ -139,13 +147,17 @@ class IngestPipeline @Inject constructor(
             amountCents = amountCents,
             type = type,
             countInStats = direction.countInStats,
-            categoryId = categoryId,
-            accountId = accountId,
+            isRefund = isRefund,
+            // 归属取原消费那笔；回溯不到就用自身
+            categoryId = refundTarget?.categoryId ?: categoryId,
+            accountId = if (refundTarget != null) refundTarget.accountId else accountId,
             merchant = null,
             note = null,
-            tradeTimeMillis = tradeTime,
+            tradeTimeMillis = refundTarget?.tradeTimeMillis ?: tradeTime,
             source = source,
             rawText = rawText,
+            // NOTE: 去重键按**信号自身的时间**算，与本行归属的 `time` 可能不同 ——
+            // 归属要查库才知道，拿它当键会让同一笔退款在两次投递里生成两个键而被记两次。
             dedupHash = DedupKey.build(amountCents, tradeTime, type, merchant = null),
             createdAt = now,
             updatedAt = now

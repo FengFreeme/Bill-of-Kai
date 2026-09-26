@@ -11,7 +11,7 @@ import com.kai.bill.domain.model.Budget
  * 携带来源 [budget]：列表里同时有「总额预算」与「分类预算」时，
  * UI 靠 [Budget.categoryId] / [Budget.isTotalBudget] 区分并展示对应分类名。
  *
- * @property budget 本进度对应的预算配置（含分类、日预算模式等），来自 [com.kai.bill.domain.calculator.BudgetCalculator] 的入参透传
+ * @property budget 本进度对应的预算配置（由调用方透传）
  * @property monthlyBudgetCents 月预算金额，单位「分」；0 表示用户未设置预算
  * @property monthSpentCents 本月已支出，单位「分」，非负
  * @property monthRemainingCents 本月剩余，单位「分」；**可以为负，负数即超支**

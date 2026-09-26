@@ -73,7 +73,6 @@ private fun accountTypeLabel(type: AccountType): String = when (type) {
  * @param onConfirmDelete 确认删除
  * @param onClearError 清除错误提示
  * @param onBack 返回
- * @param modifier 外部修饰符
  */
 @Composable
 fun AccountManageScreen(
@@ -354,13 +353,7 @@ private fun AccountEditDialog(
     )
 }
 
-/**
- * 账户管理的路由，负责接上 ViewModel。
- *
- * @param onBack 返回上一页
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
- */
+/** 账户管理的路由。 */
 @Composable
 fun AccountManageRoute(
     onBack: () -> Unit,

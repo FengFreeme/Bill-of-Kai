@@ -16,7 +16,6 @@ import com.kai.bill.core.design.theme.AppTheme
  *
  * @param title 页标题
  * @param subtitle 说明（通常含里程碑编号）
- * @param modifier 外部修饰符
  */
 @Composable
 fun PlaceholderScreen(

@@ -33,7 +33,6 @@ import com.kai.bill.feature.record.components.categoryIconRes
  * 文案在 UI 层拼：`data` 只上报 [CaptureHintKind]，不该出现给用户看的句子。
  *
  * @param hint 提示内容
- * @param modifier 外部修饰符
  */
 @Composable
 fun CaptureHintPill(hint: CaptureHint, modifier: Modifier = Modifier) {

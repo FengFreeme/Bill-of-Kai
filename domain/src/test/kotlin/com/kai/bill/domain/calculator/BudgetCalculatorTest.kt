@@ -1,6 +1,8 @@
 package com.kai.bill.domain.calculator
 
 import com.google.common.truth.Truth.assertThat
+import com.kai.bill.domain.model.Budget
+import com.kai.bill.domain.model.BudgetPeriod
 import com.kai.bill.domain.model.DailyMode
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -14,13 +16,15 @@ import org.junit.Test
  */
 class BudgetCalculatorTest {
 
+    /** 总额预算配置：本文件的用例只关心纯计算，配置固定，模式与金额由参数显式传入 */
+    private val totalBudget = budget()
+
     // ---------- 弹性模式 ----------
 
     @Test
     fun calculate_splitsRemainingAcrossDays_whenElasticMode() {
-        // Given：月预算 3000 元，已花 1000 元，还剩 10 天（含今天）
-        // When
         val progress = BudgetCalculator.calculate(
+            budget = totalBudget,
             monthlyBudgetCents = 300_000L,
             monthSpentCents = 100_000L,
             todaySpentCents = 2_000L,
@@ -29,18 +33,19 @@ class BudgetCalculatorTest {
             dailyBudgetCents = 0L
         )
 
-        // Then：剩余 2000 元 ÷ 10 天 = 今日可用 200 元
         assertThat(progress.monthRemainingCents).isEqualTo(200_000L)
         assertThat(progress.todayAvailableCents).isEqualTo(20_000L)
         assertThat(progress.todayLeftCents).isEqualTo(18_000L)
         assertThat(progress.isOverBudget).isFalse()
         assertThat(progress.progress).isWithin(0.001f).of(0.3333f)
+        // 快照要把来源预算带出去：列表里「总额预算」与「分类预算」靠它区分
+        assertThat(progress.budget).isEqualTo(totalBudget)
     }
 
     @Test
     fun calculate_givesAllRemainingToToday_whenLastDayOfMonth() {
-        // Given：月末最后一天，剩余天数恒为 1
         val progress = BudgetCalculator.calculate(
+            budget = totalBudget,
             monthlyBudgetCents = 100_000L,
             monthSpentCents = 40_000L,
             todaySpentCents = 0L,
@@ -49,7 +54,6 @@ class BudgetCalculatorTest {
             dailyBudgetCents = 0L
         )
 
-        // Then：全部月剩余都给今天，而不是「剩余 ÷ 1」之外的任何值
         assertThat(progress.monthRemainingCents).isEqualTo(60_000L)
         assertThat(progress.todayAvailableCents).isEqualTo(60_000L)
         assertThat(progress.todayLeftCents).isEqualTo(60_000L)
@@ -60,6 +64,7 @@ class BudgetCalculatorTest {
     @Test
     fun calculate_returnsNegativeRemainingAndMarksOverBudget_whenSpentExceedsBudget() {
         val progress = BudgetCalculator.calculate(
+            budget = totalBudget,
             monthlyBudgetCents = 100_000L,
             monthSpentCents = 120_000L,
             todaySpentCents = 0L,
@@ -78,6 +83,7 @@ class BudgetCalculatorTest {
     @Test
     fun calculate_clampsProgressToOne_whenOverBudget() {
         val progress = BudgetCalculator.calculate(
+            budget = totalBudget,
             monthlyBudgetCents = 100_000L,
             monthSpentCents = 120_000L,
             todaySpentCents = 0L,
@@ -95,6 +101,7 @@ class BudgetCalculatorTest {
     @Test
     fun calculate_usesFixedDailyAmount_whenFixedMode() {
         val progress = BudgetCalculator.calculate(
+            budget = budget(dailyMode = DailyMode.FIXED, dailyAmountCents = 10_000L),
             monthlyBudgetCents = 300_000L,
             monthSpentCents = 100_000L,
             todaySpentCents = 30_000L,
@@ -115,6 +122,7 @@ class BudgetCalculatorTest {
     @Test
     fun calculate_returnsZeroedSnapshot_whenBudgetNotSet() {
         val progress = BudgetCalculator.calculate(
+            budget = totalBudget,
             monthlyBudgetCents = 0L,
             monthSpentCents = 50_000L,
             todaySpentCents = 1_000L,
@@ -136,6 +144,7 @@ class BudgetCalculatorTest {
     fun calculate_throwsException_whenMonthlyBudgetIsNegative() {
         val error = assertThrows(IllegalArgumentException::class.java) {
             BudgetCalculator.calculate(
+                budget = totalBudget,
                 monthlyBudgetCents = -1L,
                 monthSpentCents = 0L,
                 todaySpentCents = 0L,
@@ -151,6 +160,7 @@ class BudgetCalculatorTest {
     fun calculate_throwsException_whenSpentAmountIsNegative() {
         val error = assertThrows(IllegalArgumentException::class.java) {
             BudgetCalculator.calculate(
+                budget = totalBudget,
                 monthlyBudgetCents = 100_000L,
                 monthSpentCents = -1L,
                 todaySpentCents = 0L,
@@ -166,6 +176,7 @@ class BudgetCalculatorTest {
     fun calculate_throwsException_whenDaysRemainingIsZero() {
         val error = assertThrows(IllegalArgumentException::class.java) {
             BudgetCalculator.calculate(
+                budget = totalBudget,
                 monthlyBudgetCents = 100_000L,
                 monthSpentCents = 0L,
                 todaySpentCents = 0L,
@@ -176,4 +187,20 @@ class BudgetCalculatorTest {
         }
         assertThat(error).hasMessageThat().contains("剩余天数")
     }
+
+    /** 总额预算（`categoryId = null`）的最小配置；纯计算用例不关心其余字段 */
+    private fun budget(
+        dailyMode: DailyMode = DailyMode.ELASTIC,
+        dailyAmountCents: Long = 0L
+    ): Budget = Budget(
+        id = 1L,
+        categoryId = null,
+        period = BudgetPeriod.MONTHLY,
+        amountCents = 300_000L,
+        startDay = 1,
+        dailyMode = dailyMode,
+        dailyAmountCents = dailyAmountCents,
+        carryOver = false,
+        enabled = true
+    )
 }

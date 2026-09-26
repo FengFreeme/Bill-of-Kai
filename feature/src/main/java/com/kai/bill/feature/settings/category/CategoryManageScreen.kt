@@ -55,30 +55,16 @@ import com.kai.bill.domain.model.Category
 import com.kai.bill.domain.model.CategoryNode
 import com.kai.bill.feature.record.components.categoryIconRes
 
-/** 一级分类展开 / 收起其二级列表的过渡时长 */
 private const val SUB_CATEGORY_ANIM_MILLIS = 260
 
 /**
- * 分类管理页：两级分类的增删改。
- *
- * 自上而下：顶栏 → 支出/收入切换 → 分类树（一级可折叠，二级缩进）→ 新增一级分类 → 错误提示。
- * 无状态：只消费 [CategoryManageUiState]，所有写操作回调上抛给 [CategoryManageViewModel]。
+ * 分类管理页：两级分类的增删改。无状态：只消费 [CategoryManageUiState]，
+ * 所有写操作回调上抛给 [CategoryManageViewModel]。
  *
  * 预置分类不显示删除入口（DAO 层的 `deleteIfCustom` 也拦了一道），但允许改名。
  *
- * @param uiState 分类管理状态
- * @param onTypeChange 支出 / 收入切换
- * @param onToggleExpand 折叠 / 展开某个一级分类
- * @param onRequestAddParent 请求新增一级分类
- * @param onRequestAddChild 请求在某个一级分类下新增二级分类
- * @param onRequestRename 请求给分类改名
  * @param onDelete 删除分类（ViewModel 内做预置 / 有子分类的校验）
- * @param onSubmitEdit 提交对话框里的分类名
- * @param onDismissEdit 关闭对话框
- * @param onClearError 清除错误提示
- * @param onBack 返回
  * @param focusParentId 进入时要定位的一级分类 ID；0 表示不定位（普通进入）
- * @param modifier 外部修饰符
  */
 @Composable
 fun CategoryManageScreen(
@@ -404,12 +390,9 @@ private fun CategoryEditDialog(
 }
 
 /**
- * 分类管理的路由，负责接上 ViewModel。
+ * 分类管理的路由。
  *
- * @param onBack 返回上一页
  * @param focusParentId 进入时要定位的一级分类 ID；0 表示不定位
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun CategoryManageRoute(

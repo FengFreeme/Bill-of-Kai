@@ -32,7 +32,6 @@ import com.kai.bill.domain.model.stats.BudgetProgress
  * 今日可用与已花最小 —— 视线自然从大字落到细节。
  *
  * @param progress 预算进度快照
- * @param modifier 外部修饰符
  */
 @Composable
 fun BudgetCard(

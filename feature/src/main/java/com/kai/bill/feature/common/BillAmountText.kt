@@ -25,7 +25,6 @@ import com.kai.bill.domain.model.SourceType
  * 因此这层映射必须放在 `feature` —— 绝不能为了让设计系统认识 [Bill] 而让它反向依赖 `:domain`。
  *
  * @param bill 账单；金额取其 [Bill.amountCents]，符号与颜色由 [Bill.type] 决定
- * @param modifier 外部修饰符
  * @param style 文本样式，默认 `bodyMedium`
  */
 @Composable

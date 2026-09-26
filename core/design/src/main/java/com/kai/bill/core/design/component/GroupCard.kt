@@ -18,13 +18,8 @@ import com.kai.bill.core.design.theme.DarkMode
 private val GROUP_CARD_RADIUS = 20.dp
 
 /**
- * 分组卡 —— 二级指标 / 同类信息块。
- *
- * 视觉上弱于 [PrimaryCard]，复用 [GlassCard] 的纯色表面皮肤，仅固定圆角层级。
- *
- * @param modifier 外部修饰符
- * @param onClick 可选点击
- * @param content 内容
+ * 分组卡 —— 二级指标 / 同类信息块。视觉弱于 [PrimaryCard]，
+ * 复用 [GlassCard] 纯色表面皮肤，仅固定圆角层级。
  */
 @Composable
 fun GroupCard(

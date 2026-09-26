@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** [CategoryRepository] 的 Room 实现。注入 [CategoryDao]，经 [CategoryMapper] 转换。 */
 @Singleton
 class CategoryRepositoryImpl @Inject constructor(
     private val categoryDao: CategoryDao

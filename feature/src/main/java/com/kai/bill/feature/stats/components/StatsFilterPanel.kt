@@ -56,7 +56,6 @@ import com.kai.bill.feature.stats.StatsFilterDraft
  * @param onReset 重置草稿
  * @param onApply 应用草稿
  * @param onDismiss 关闭面板
- * @param modifier 外部修饰符
  */
 @Composable
 fun StatsFilterPanel(

@@ -7,7 +7,6 @@ package com.kai.bill.domain.model
  * 分类管理页都需要「一级 + 其子分类」的两级视图，因此统一在这里组装，
  * 避免每个页面各写一遍 `groupBy`。
  *
- * @property parent 一级分类
  * @property children 其下二级分类，按 `sortOrder` 升序；可能为空
  */
 data class CategoryNode(

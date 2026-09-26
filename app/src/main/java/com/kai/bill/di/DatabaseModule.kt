@@ -21,17 +21,13 @@ import javax.inject.Singleton
 /**
  * 数据库与 DAO 的绑定。
  *
- * 实例统一在此创建：业务代码禁止自行 `Room.databaseBuilder`，
- * 否则会有多实例 + 迁移不一致的风险。
+ * 实例统一在此创建：业务代码禁止自行 `Room.databaseBuilder`，否则会有多实例 + 迁移不一致的风险。
  *
- * 迁移策略：应用已会播种真实分类/账户并沉淀用户账单，**清库不可接受**，
- * 因此这里显式挂上 [ALL_MIGRATIONS] 且**不提供任何兜底**。
- * 缺迁移时宁可让 Room 抛异常（旧版本升级后打不开，问题当天暴露），
- * 也不要像 `fallbackToDestructiveMigration` 那样静默清空用户全部账目，
- * 后者往往要等到用户发现「账单没了」才被察觉。
+ * 已会沉淀用户账单，**清库不可接受**：显式挂 [ALL_MIGRATIONS] 且不提供任何兜底 ——
+ * 缺迁移时宁可让 Room 抛异常（升级后打不开，问题当天暴露），也不要用 `fallbackToDestructiveMigration`
+ * 那样静默清空用户全部账目（往往要等用户发现「账单没了」才被察觉）。
  *
- * 迁移文件位置：`core/db/src/main/java/com/kai/bill/core/db/migration/Migrations.kt`
- * （注意不是 `data` 模块 —— `Migration` 与 Entity 同属 `core:db`）。
+ * 迁移文件在 `core/db/.../migration/Migrations.kt`（与 Entity 同属 `core:db`，不在 `data`）。
  */
 @Module
 @InstallIn(SingletonComponent::class)

@@ -3,6 +3,7 @@ package com.kai.bill.domain.usecase.stats
 import com.kai.bill.domain.model.BillFilter
 import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.DateRange
+import com.kai.bill.domain.model.RefundCategory
 import com.kai.bill.domain.model.childToParentIdMap
 import com.kai.bill.domain.model.stats.CategoryAmount
 import com.kai.bill.domain.model.stats.CategoryStat
@@ -30,6 +31,12 @@ import javax.inject.Inject
  * 比率 [CategoryStat.ratio] 在此统一算好，UI 只负责渲染。若把比率留给 UI 算，
  * 很容易出现一处按「总额」、另一处按「有分类的总额」，两个分母口径不一致，
  * 最终占比加起来不是 100%。
+ *
+ * **退款（负值）的两条特殊处理**：
+ * 1. 不参与一级上卷，单列一条负值 —— 它挂在收入侧的「退款」分类上，
+ *    上卷会把它并进「其他收入」，在支出构成里出现一个收入分类（见 [RefundCategory]）；
+ * 2. 占比分母取各项**绝对值之和**（[absoluteTotalOf]），净额做分母会算出负比率，
+ *    环形图按比率铺角度就崩了。合计金额 [CategoryStat.amountCents] 仍按净额，负号照常显示。
  */
 class ObserveCategoryStatsUseCase @Inject constructor(
     private val statsRepository: StatsRepository,
@@ -56,11 +63,20 @@ class ObserveCategoryStatsUseCase @Inject constructor(
                 .map { bills -> StatsAggregator.categoryAmounts(bills, type) }
         }
 
-        return combine(amounts, categoryRepository.observeByType(type)) { raw, categories ->
+        // 取全量分类而不是 observeByType(type)：退款挂在收入侧的「退款」分类上，
+        // 按类型取会让它在支出构成里找不到名字、退化成灰色「未分类」
+        return combine(amounts, categoryRepository.observeAll()) { raw, categories ->
             val categoryById = categories.associateBy { it.id }
             val merged = if (mode == CategoryStatsMode.PARENT) {
                 val parentMap = categories.childToParentIdMap()
-                raw.groupBy { parentMap[it.categoryId] ?: it.categoryId }
+                raw.groupBy { amount ->
+                    // 退款不参与上卷：上卷会把它并进「其他收入」，支出构成里就多了个收入分类
+                    if (amount.categoryId == RefundCategory.ID) {
+                        amount.categoryId
+                    } else {
+                        parentMap[amount.categoryId] ?: amount.categoryId
+                    }
+                }
                     .map { (categoryId, group) ->
                         CategoryAmount(
                             categoryId = categoryId,
@@ -73,7 +89,8 @@ class ObserveCategoryStatsUseCase @Inject constructor(
                 raw.sortedByDescending { it.amountCents }
             }
 
-            val totalCents = merged.sumOf { it.amountCents }
+            // 分母取绝对值之和：净额做分母时退款会算出负比率（见文件头注释）
+            val ratioTotalCents = absoluteTotalOf(merged.map { it.amountCents })
             merged.map { amount ->
                 val category = categoryById[amount.categoryId]
                 CategoryStat(
@@ -83,7 +100,7 @@ class ObserveCategoryStatsUseCase @Inject constructor(
                     categoryName = category?.name ?: UNKNOWN_CATEGORY_NAME,
                     colorHex = category?.colorHex ?: UNKNOWN_COLOR_HEX,
                     amountCents = amount.amountCents,
-                    ratio = ratioOf(amount.amountCents, totalCents),
+                    ratio = ratioOf(amount.amountCents, ratioTotalCents),
                     billCount = amount.billCount
                 )
             }

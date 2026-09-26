@@ -3,7 +3,9 @@ package com.kai.bill.feature.settings.review
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kai.bill.domain.model.Bill
+import com.kai.bill.domain.model.BillType
 import com.kai.bill.domain.model.PendingBill
+import com.kai.bill.domain.model.RefundCategory
 import com.kai.bill.domain.repository.AccountRepository
 import com.kai.bill.domain.repository.BillRepository
 import com.kai.bill.domain.repository.CategoryRepository
@@ -30,8 +32,7 @@ import javax.inject.Inject
  * 落库时**复用待确认记录的 `dedupHash`**：万一这笔此前已经落过账（例如词表更新后重新解析过），
  * `bill` 表的唯一索引会拦住重复插入并返回 -1 —— 那同样是「已处理」，照常删行，不让它永远卡在列表里。
  *
- * @property pendingRepository 待确认仓储
- * @property billRepository 账单仓储（接受建议 / 改一下都要落库）
+ * @property billRepository 接受建议 / 改一下都要落库
  * @property categoryRepository 分类仓储，只为把建议里的分类 id 显示成名字
  * @property accountRepository 账户仓储，同上
  * @property clock 时间源（落库时的记录时间）
@@ -176,6 +177,8 @@ class NeedsReviewViewModel @Inject constructor(
             amountCents = amountCents,
             type = type,
             countInStats = suggestedCountInStats,
+            // 与手动记账同一条派生规则：收入 + 退款分类即退款（见 `RecordBillUseCase`）
+            isRefund = type == BillType.INCOME && categoryId == RefundCategory.ID,
             categoryId = categoryId,
             accountId = suggestedAccountId,
             merchant = null,

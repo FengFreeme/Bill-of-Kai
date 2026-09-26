@@ -27,16 +27,7 @@ import com.kai.bill.core.design.theme.DarkMode
 import com.kai.bill.feature.home.HomeOverview
 
 /**
- * 累计消费主卡（基于 [PrimaryCard]）。
- *
- * 同一卡片内展示：
- * - 累计消费（大金额）
- * - 本月支出 / 本月收入（底部左右分栏）
- *
- * 字体大小与原来保持一致，仅把「本月笔数 / 本月消费」两张小卡合并进来。
- *
- * @param overview 首页概览数据
- * @param modifier 外部修饰符
+ * 累计消费主卡（基于 [PrimaryCard]）：累计消费（大金额）+ 本月支出 / 本月收入 / 本月结余。
  */
 @Composable
 fun OverviewCard(

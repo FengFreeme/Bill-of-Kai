@@ -72,9 +72,8 @@ interface BillReviewNotifier {
  * | **无障碍悬浮层** | 本应用的无障碍服务在运行 | `TYPE_ACCESSIBILITY_OVERLAY` 窗口类型**不需要任何权限** |
  * | 高优先级横幅通知 | 上一条失败（服务被停/进程异常） | 点通知属于前台操作，系统必然放行启动卡片 |
  *
- * ⚠️ **不要退回「后台 startActivity」**：Android 10 起后台启动 Activity 的 8 条官方豁免里
- * 没有「无障碍服务」，`SYSTEM_ALERT_WINDOW` 也不该为此申请（商业产品同样没申请）。
- * 那条路会被系统**静默拦截**，不抛异常、不留日志，本项目为此白改了一轮。
+ * NOTE: 别退回「后台 startActivity」—— Android 10 起后台启动 Activity 的官方豁免里没有
+ * 「无障碍服务」，那条路会被系统静默拦截：不抛异常、不留日志，极难排查。
  */
 @Singleton
 class DefaultBillReviewNotifier @Inject constructor(
@@ -117,14 +116,17 @@ class DefaultBillReviewNotifier @Inject constructor(
 
     private fun postHeadsUp(billId: Long, reason: ReviewCardReason) {
         ensureChannel()
-        // 与卡片文案同一套口径：新建说「多了一笔」，补分类说「只改了分类」
+        // 与卡片文案同一套口径：新建说「多了一笔」，补分类说「只改了分类」，
+        // 没定出分类说「账没动，等你选」
         val title = when (reason) {
             ReviewCardReason.CREATED -> "已自动记一笔"
             ReviewCardReason.ENRICHED -> "已补充分类"
+            ReviewCardReason.NO_MATCH -> "这笔还没分类"
         }
         val text = when (reason) {
             ReviewCardReason.CREATED -> "点开可以改分类或撤销"
             ReviewCardReason.ENRICHED -> "点开可以看看改成了什么"
+            ReviewCardReason.NO_MATCH -> "点开选一个分类就会补上"
         }
 
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)

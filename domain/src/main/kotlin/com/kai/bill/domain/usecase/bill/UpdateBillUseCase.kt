@@ -58,6 +58,8 @@ class UpdateBillUseCase @Inject constructor(
             amountCents = params.amountCents,
             type = params.type,
             countInStats = params.countInStats,
+            // 编辑退款要保留标记；类型改成非收入则必须清掉，否则这笔支出会按负值参与统计
+            isRefund = params.type == BillType.INCOME && params.snapshot.isRefund,
             categoryId = params.categoryId,
             accountId = params.accountId,
             note = params.note?.takeIf { it.isNotBlank() },

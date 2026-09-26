@@ -2,6 +2,7 @@ package com.kai.bill.domain.usecase.bill
 
 import com.kai.bill.domain.model.Bill
 import com.kai.bill.domain.model.BillType
+import com.kai.bill.domain.model.RefundCategory
 import com.kai.bill.domain.model.SourceType
 import com.kai.bill.domain.repository.BillRepository
 import com.kai.bill.domain.time.Clock
@@ -63,6 +64,9 @@ class RecordBillUseCase @Inject constructor(
             amountCents = params.amountCents,
             type = params.type,
             countInStats = params.countInStats,
+            // 手动退款同样要冲抵支出：判据与解析侧一致（收入 + 退款分类），不额外加开关。
+            // 代价是拿不到原消费归属，冲抵落在当月与本分类。
+            isRefund = params.type == BillType.INCOME && params.categoryId == RefundCategory.ID,
             categoryId = params.categoryId,
             accountId = params.accountId,
             merchant = null,

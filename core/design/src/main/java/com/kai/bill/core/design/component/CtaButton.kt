@@ -27,10 +27,6 @@ private val CTA_RADIUS = 24.dp
 /**
  * 主操作按钮（CTA）。
  *
- * @param text 按钮文案
- * @param onClick 点击回调
- * @param modifier 外部修饰符
- * @param enabled 是否可点
  * @param fillMaxWidth 是否撑满宽度；首页主 CTA 通常为 true
  * @param leadingIcon 左侧图标；首页「记录消费」可传加号
  */

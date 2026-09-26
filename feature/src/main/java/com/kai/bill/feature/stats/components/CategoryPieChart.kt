@@ -26,7 +26,6 @@ import com.patrykandpatrick.vico.compose.pie.rememberPieChart
  * 与其做对比度自适应，不如让下方图例统一承担「名称 + 金额 + 占比」。
  *
  * @param stats 分类统计（按金额降序）
- * @param modifier 外部修饰符
  */
 @Composable
 fun CategoryPieChart(

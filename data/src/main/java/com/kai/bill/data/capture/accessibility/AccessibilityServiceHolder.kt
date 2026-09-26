@@ -6,7 +6,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 当前存活的 [KaiAccessibilityService] 句柄。
+ * 当前存活的 [KaiAccessibilityCore] 句柄（清单里以 `SelectToSpeakService` 注册）。
  *
  * **存在的唯一理由**：`TYPE_ACCESSIBILITY_OVERLAY` 类型的窗口需要一个**有效的窗口 token**。
  * 用 Application 上下文取到的 `WindowManager` 其 token 为 null，`addView` 会直接抛

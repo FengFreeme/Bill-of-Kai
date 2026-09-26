@@ -24,7 +24,7 @@ import javax.inject.Singleton
  * **内存态、不落盘**：窗口只有 [TTL_MILLIS] 量级，进程重启后失效最多让极少数重放重复一次，
  * 不值得为它引入 DataStore 的写放大。
  *
- * ⚠️ **已知取舍**：[isDuplicate] 只按 key 判断，不比对内容。若某个 App 用**同一个 key**
+ * NOTE: **已知取舍**：[isDuplicate] 只按 key 判断，不比对内容。若某个 App 用**同一个 key**
  * 反复推送**不同交易**（如「最近一笔」这类常驻提醒），落在 [TTL_MILLIS] 窗口内的后一笔会被误挡。
  * 因此 [TTL_MILLIS] 是这里唯一的旋钮，且刻意取小：窗口越短，误挡真实交易的概率越低，
  * 能拦住的更新重发也越少。

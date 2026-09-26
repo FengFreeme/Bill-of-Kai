@@ -8,10 +8,9 @@ import javax.inject.Singleton
 /**
  * 所有采集来源的统一入口（对外签名保持不变）。
  *
- * 解析职责已整体下沉到 [IngestPipeline]（四级路由），本类现在只是一层薄适配：
+ * 解析职责已整体下沉到 [IngestPipeline]（四级路由），本类只是一层薄适配：
  * - 保留 `ingest(rawText, source)` 这一既有签名，短信补扫（M5）与将来的来源无需改动；
- * - 不再订阅 `ParseRuleRepository` —— 13 条整包正则已退休（规则数据仍在 `parse_rule` 表里，
- *   留给 P1 改造成 `match_keyword` 词表），因此采集路径上不再有任何 DB 读。
+ * - 采集路径不做任何 DB 读：解析全走常量词表，`parse_rule` 表留给 P1 改造成 `match_keyword` 词表。
  */
 @Singleton
 class BillIngestor @Inject constructor(

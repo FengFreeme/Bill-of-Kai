@@ -20,14 +20,10 @@ import com.kai.bill.core.design.theme.BillOfKaiTheme
 import com.kai.bill.core.design.theme.DarkMode
 
 /**
- * 空态占位：无账单、无统计数据时展示。
+ * 空态占位：无账单、无统计数据时展示。刻意做得**轻量**，空态页面应安静、不抢视觉焦点。
  *
- * 刻意做得**轻量**：空态页面本身就应该安静，不抢视觉焦点。
- *
- * @param title 主文案，如「还没有记账记录」
- * @param subtitle 辅助说明，可为 null
- * @param icon 顶部图标，可为 null；由调用方传入以保持零业务耦合
- * @param modifier 外部修饰符
+ * @param subtitle 可为 null
+ * @param icon 可为 null；由调用方传入以保持零业务耦合
  */
 @Composable
 fun EmptyState(

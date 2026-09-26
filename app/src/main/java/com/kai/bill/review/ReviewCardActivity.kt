@@ -15,10 +15,10 @@ import dagger.hilt.android.AndroidEntryPoint
  * 确认卡片 —— 识别成功并落库后自动弹出的**半透明浮层**。
  *
  * 三个刻意的选择：
- * 1. **不是 Dialog 而是 Activity**：只有 Activity 能被无障碍服务从后台 `startActivity` 拉起，
- *    `DialogFragment` 需要先有宿主 Activity 在前台；
- * 2. **不用 `SYSTEM_ALERT_WINDOW`**：那要额外权限，而无障碍服务本身是
- *    Android 10+ 后台启动 Activity 的豁免来源之一；
+ * 1. **不是 Dialog 而是 Activity**：它由通知的 `PendingIntent` 拉起，而 `PendingIntent` 只能拉
+ *    Activity / Service / Receiver —— `DialogFragment` 需要先有宿主 Activity 在前台；
+ * 2. **不用 `SYSTEM_ALERT_WINDOW`**：那要额外权限。自动弹卡那条路走无障碍悬浮层
+ *    （后台 `startActivity` 会被系统静默拦截：「无障碍服务」**不在**官方豁免之列，见 `ReviewCardOverlay`）；
  * 3. **`noHistory` + `excludeFromRecents`**：它是一次性浮层，不该出现在最近任务里，
  *    也不该在用户切走后还留在栈里。
  *
@@ -31,16 +31,14 @@ class ReviewCardActivity : ComponentActivity() {
     /**
      * 当前展示的账单 id。
      *
-     * 用可观察状态而不是普通字段：卡片已在前台时又记了一笔，系统会把新 Intent
-     * 交给 [onNewIntent]（`singleTop`），只有可观察状态才能让已组合的界面换成新内容。
+     * 用可观察状态而非普通字段：卡片已在前台时又记一笔，系统会把新 Intent 交给 [onNewIntent]，
+     * 只有可观察状态才能让已组合的界面换成新内容。
      */
     private val billIdState = mutableStateOf(0L)
 
     /**
-     * 当前展示的来由（新建 / 补分类）。
-     *
-     * 与 [billIdState] 同样用可观察状态：走通知兜底路径时，只能靠 Intent 把来由带进来，
-     * 而卡片文案必须跟着它变（见 [ReviewCardReason]）。
+     * 当前展示的来由（新建 / 补分类）。与 [billIdState] 同样用可观察状态：
+     * 走通知兜底路径时只能靠 Intent 把来由带进来，而卡片文案必须跟着它变（见 [ReviewCardReason]）。
      */
     private val reasonState = mutableStateOf(ReviewCardReason.CREATED)
 
@@ -72,12 +70,9 @@ class ReviewCardActivity : ComponentActivity() {
 /**
  * 「从外部 Intent 直达账单编辑页」的 Intent 契约。
  *
- * 与 `data` 的 [ReviewCardContract] 分开：那个是「谁来显示卡片」（data → app），
- * 这个是「把用户送到编辑页」（app 内部）。混在一起会让 `data` 的契约表里多出一个
- * 它永远不会写入的字段。
- *
- * 注意：确认卡片改成「就地弹出分类选择」后，卡片这条路径**不再写它**；
- * 现在只剩 `MainActivity` 在读取，保留是为了不破坏「外部 Intent 带账单 id 进来」的通路。
+ * 与 `data` 的 [ReviewCardContract] 分开（那个负责「谁来显示卡片」），
+ * 混在一起会让 `data` 的契约表里多出一个它永不写入的字段。
+ * 确认卡片改为就地选分类后已不再写它，现仅 `MainActivity` 读取，保留以维持外部 Intent 直达的通路。
  */
 object EditBillContract {
 

@@ -26,17 +26,11 @@ import com.kai.bill.feature.common.StatsTabIcon
 private const val BAR_FADE_MILLIS = 200
 
 /**
- * 底部导航装配层：读 [NavHostController] → 驱动纯视觉 [KaiBottomBar]。
+ * 底部导航装配层：读 [NavHostController] → 驱动纯视觉 [KaiBottomBar]；仅含三个顶层 Tab。
  *
- * 仅含三个顶层 Tab（首页 / 统计 / 设置）。记一笔等为二级页。
+ * 显隐策略：**只有顶层 Tab 显示底栏**，二级页隐藏 —— 自定义背景图要求页面透明，
+ * 透明页盖不住底栏，故不能像早期那样「底栏常驻、二级页用不透明背景盖住」。
  *
- * 显隐策略：**只有顶层 Tab 显示底栏**，二级页隐藏。
- * 早期实现是「底栏常驻、二级页用不透明背景盖住」，但自定义背景图要求页面透明
- * （背景统一由根部那张全屏图提供，页面自己再画会导致 Crop 缩放不一致），
- * 透明页面盖不住底栏，于是改为直接隐藏。
- *
- * @param navController 导航控制器
- * @param modifier 外部修饰符
  * @param bottomInset 系统导航栏高度，交给底栏内部一并铺色（保证背景只有一层）
  */
 @Composable

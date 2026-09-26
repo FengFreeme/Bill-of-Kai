@@ -28,11 +28,9 @@ import com.kai.bill.core.db.entity.PendingBillEntity
  *
  * 升级流程：本值 +1 → 在 `migration/Migrations.kt` 追加一条 Migration →
  * 加进 `ALL_MIGRATIONS` → 在 `app/di/DatabaseModule` 的 `addMigrations(...)` 生效。
- *
- * **v1 → v2**：新增待确认表 `pending_bill`（判不准的通知先存下来等用户拍板）。
- * 纯增量建表，不改任何既有表的列，因此迁移不会触碰用户已有账目。
+ * 各版本改了什么见 `Migrations.kt`。
  */
-private const val DATABASE_VERSION = 2
+private const val DATABASE_VERSION = 3
 
 /**
  * 小凯记账的 Room 数据库 —— **唯一数据源（Single Source of Truth）**。
@@ -73,7 +71,6 @@ abstract class KaiDatabase : RoomDatabase() {
 
     companion object {
 
-        /** 数据库文件名 */
         const val DATABASE_NAME = "kai_bill.db"
     }
 }

@@ -15,6 +15,7 @@ import com.kai.bill.domain.model.stats.StatsGranularity
 import com.kai.bill.domain.repository.AccountRepository
 import com.kai.bill.domain.repository.CategoryRepository
 import com.kai.bill.domain.time.Clock
+import com.kai.bill.domain.time.DayTicker
 import com.kai.bill.domain.usecase.bill.ObserveBillsUseCase
 import com.kai.bill.domain.usecase.stats.ObserveAccountStatsUseCase
 import com.kai.bill.domain.usecase.stats.ObserveCategoryStatsUseCase
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -44,18 +46,17 @@ import javax.inject.Inject
 /**
  * 统计页 ViewModel。
  *
- * M2：把 M0 的 `MutableStateFlow` 占位换成随「粒度 + 类型 + 筛选」变化的响应式流。
- *
- * **筛选同时作用于统计与流水**：概览 / 分类构成 / 排行 / 趋势都按筛选结果重算，
- * 即「分类构成就是筛选结果」，两者口径必须一致。
+ * 筛选同时作用于统计与流水：概览 / 分类构成 / 排行 / 趋势都按筛选结果重算，两者口径必须一致。
  * 代价是改筛选会连带重跑四个统计查询 —— 因此无筛选时仍走 `StatsDao` 的 SQL 聚合，
  * 只有带筛选时才退化为明细的内存聚合（[StatsAggregator]），单区间千级流水完全够用。
  *
  * 分类 / 账户候选列表（[categories] / [accounts]）走独立流，不并入 [uiState]：
  * `combine` 的 typed overload 最多 5 个源，硬塞进去会逼着改用类型不安全的写法。
  *
- * 区间一律按**用户时区**计算（[TimeRange] 内部处理），
- * 用 UTC 会让东八区在早上 8 点前把账记到前一天。
+ * 区间一律按**用户时区**计算（[TimeRange] 内部处理），用 UTC 会让东八区在早上 8 点前把账记到前一天。
+ *
+ * 锚点跨日刷新：区间由锚点现算，锚点不刷新的话 App 跨日存活时页面会停在昨天
+ * （与首页预算卡同一类问题），因此 [dayTicker] 每天 0 点把仍跟随当前的锚点前移一次。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -67,20 +68,35 @@ class StatsViewModel @Inject constructor(
     private val observeBills: ObserveBillsUseCase,
     categoryRepository: CategoryRepository,
     accountRepository: AccountRepository,
+    private val dayTicker: DayTicker,
     private val clock: Clock
 ) : ViewModel() {
 
     private val zone = ZoneId.systemDefault()
 
     private val rangeKind = MutableStateFlow(DateRangeKind.MONTH)
-    /** 当前粒度下的锚定日期（毫秒），周 / 月 / 年切换器在此基础上平移 */
+
+    /** 当前粒度下的锚定日期（毫秒）；跟随「当前时刻」时会在跨日后自动前移 */
     private val selectedDate = MutableStateFlow(clock.nowMillis())
+
+    /** 锚点是否仍跟随当前时刻：用户手动选过日期后置 false —— 跨日刷新不能把他拽回今天 */
+    private val followsNow = MutableStateFlow(true)
+
     private val statType = MutableStateFlow(BillType.EXPENSE)
     private val filter = MutableStateFlow<BillFilter?>(null)
     private val categoryStatsMode = MutableStateFlow(CategoryStatsMode.PARENT)
 
     private val _filterDraft = MutableStateFlow(StatsFilterDraft())
     private val _filterPanelOpen = MutableStateFlow(false)
+
+    init {
+        // 用户手动选过日期（followsNow = false）时不打扰，否则看历史月份会被拽回今天
+        viewModelScope.launch {
+            dayTicker.ticks().collect {
+                if (followsNow.value) selectedDate.value = clock.nowMillis()
+            }
+        }
+    }
 
     /** 筛选面板草稿；点「查看结果」才会写进 [filter] */
     val filterDraft: StateFlow<StatsFilterDraft> = _filterDraft.asStateFlow()
@@ -169,15 +185,17 @@ class StatsViewModel @Inject constructor(
             initialValue = StatsUiState()
         )
 
-    /** 切换时间粒度（日 / 周 / 月 / 年）；切回时锚定到当前日期 */
+    /** 切换时间粒度（日 / 周 / 月 / 年）；切回时锚定到当前日期并恢复跟随跨日刷新 */
     fun onRangeKindSelected(kind: DateRangeKind) {
         rangeKind.value = kind
         selectedDate.value = clock.nowMillis()
+        followsNow.value = true
     }
 
-    /** 在维度底部弹层中选定某个具体日期（日 / 周 / 月 / 年） */
+    /** 在维度底部弹层中选定某个具体日期（日 / 周 / 月 / 年）；此后不再自动跟随跨日 */
     fun onDateAnchorSelected(dateMillis: Long) {
         selectedDate.value = dateMillis
+        followsNow.value = false
     }
 
     /** 切换分类统计维度（主分类 / 子分类）。 */
@@ -185,12 +203,7 @@ class StatsViewModel @Inject constructor(
         categoryStatsMode.value = mode
     }
 
-    /**
-     * 切换统计维度（支出 / 收入）。
-     *
-     * 切换后自动重设为「该类型下全部分类 + 全部账户 + 未指定账户」，
-     * 即等价不筛选，但面板里仍然显示全选。
-     */
+    /** 切换统计维度（支出 / 收入）：同时重置为「等价不筛选」，但面板仍显示全选。 */
     fun onStatTypeSelected(type: BillType) {
         statType.value = type
         filter.value = null
@@ -198,11 +211,8 @@ class StatsViewModel @Inject constructor(
     }
 
     /**
-     * 打开筛选面板。
-     *
-     * 草稿**每次都重置为「什么都不勾」**（分类 / 账户 /「未指定账户」全不选），
-     * 勾什么由用户自己决定；也不回填当前生效的筛选，避免面板一打开就是上次条件的子集。
-     * 生效中的条件在页面摘要条上有展示，那里可以一键清除。
+     * 打开筛选面板：草稿每次都重置为「什么都不勾」，也不回填当前生效的筛选，
+     * 避免面板一打开就是上次条件的子集（生效条件在页面摘要条上可一键清除）。
      */
     fun openFilterPanel() {
         _filterDraft.value = defaultDraft(statType.value)
@@ -213,9 +223,7 @@ class StatsViewModel @Inject constructor(
         _filterPanelOpen.value = false
     }
 
-    /**
-     * 面板内切换类型：同步切换统计页类型，并把草稿重置为「什么都不勾」。
-     */
+    /** 面板内切换类型：同步切换统计页类型，并把草稿重置为「什么都不勾」。 */
     fun onDraftTypeSelected(type: BillType?) {
         val effective = type ?: statType.value
         statType.value = effective
@@ -326,11 +334,7 @@ class StatsViewModel @Inject constructor(
         _filterDraft.value = defaultDraft(statType.value)
     }
 
-    /**
-     * 直接应用一套筛选条件。
-     *
-     * @param newFilter 新的筛选条件；传 null 表示不筛选
-     */
+    /** @param newFilter 新筛选条件；传 null 表示不筛选 */
     fun onFilterApplied(newFilter: BillFilter?) {
         filter.value = newFilter
     }
@@ -376,10 +380,19 @@ class StatsViewModel @Inject constructor(
     ): List<WeeklyBar> {
         val anchorMonday = mondayOf(anchorMillis)
         val weeks = (4 downTo 0).map { anchorMonday.minusWeeks(it.toLong()) }
-        val amounts = bills
-            .filter { it.type == type }
-            .groupBy { mondayOf(it.tradeTimeMillis) }
-            .mapValues { entry -> entry.value.sumOf { it.amountCents } }
+        // 取对应维度的带符号金额：退款是支出侧的负项，本周退款要能把本周支出压下去；
+        // 顺带把「未计入统计」的流水挡住（此前只按 type 过滤，与其它聚合口径不一致）
+        val amounts = bills.asSequence()
+            .mapNotNull { bill ->
+                val signed = when (type) {
+                    BillType.EXPENSE -> bill.signedExpenseCents
+                    BillType.INCOME -> bill.signedIncomeCents
+                    BillType.TRANSFER -> null
+                }
+                signed?.let { mondayOf(bill.tradeTimeMillis) to it }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, signed) -> signed.sum() }
         return weeks.map { start ->
             val startMs = start.atStartOfDay(zone).toInstant().toEpochMilli()
             val endMs = start.plusDays(6)

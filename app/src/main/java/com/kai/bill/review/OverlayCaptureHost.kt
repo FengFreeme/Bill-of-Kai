@@ -64,25 +64,15 @@ import kotlinx.coroutines.withContext
  * | 确认卡片（[ReviewCardOverlay]） | 新建 / 补分类 | 整屏遮罩 + 底部卡片，**可触摸** |
  * | 提示条（[CaptureHintOverlay]） | 已记录 / 待确认 | `WRAP_CONTENT` 胶囊，**不可触摸** |
  *
- * 两者放在同一个类里而不是各写一个宿主：窗口脚手架（`TYPE_ACCESSIBILITY_OVERLAY`
- * ＋ [OverlayViewOwner] 三合一宿主 ＋ 失败诊断）才是这套东西最容易踩坑的部分
- * （`BadTokenException`、Compose 的宿主校验、`addView` 静默失败），
- * 复制一份迟早会漂移。两者的窗口参数差异集中在各自的 `params` 里，并不共用。
+ * 两者共用一个宿主：容易踩坑的是窗口脚手架本身（`BadTokenException`、Compose 的宿主校验、
+ * `addView` 静默失败），复制一份迟早会漂移；差异只在各自的 `params` 里。
  *
- * 窗口类型固定为 `TYPE_ACCESSIBILITY_OVERLAY`：只要本应用的无障碍服务在运行，
- * 这个类型**不需要任何权限**就能盖在别的 App 之上。这正是商业产品
- * （小黑记账的「自动记账面板」）的做法 —— 它的悬浮窗权限处于 denied 状态，
- * 面板却照常显示。
+ * 窗口类型固定 `TYPE_ACCESSIBILITY_OVERLAY` —— 只要本应用的无障碍服务在运行，它**不需要任何权限**
+ * 就能盖在别的 App 上。别退回「后台拉半透明 Activity」：那条路会被系统静默拦截，不抛异常也不留日志
+ * （详见 `BillReviewNotifier` 的类注释）。
  *
- * **为什么早先的实现是错的**：先用了「后台 startActivity 拉起半透明 Activity」，
- * 而 Android 10 起的后台启动 Activity 限制的 8 条官方豁免里
- * （可见窗口 / IME / 系统 PendingIntent / `SYSTEM_ALERT_WINDOW` /
- * `START_ACTIVITIES_FROM_BACKGROUND` / 受已获准服务绑定 / 启动器 / OS 核心）
- * **没有「无障碍服务」**，于是卡片一张都没弹出来过，而且系统是静默拦截，
- * 代码里连异常都看不到。
- *
- * 数据由本类直接注入仓储获取，不引入 ViewModel —— 省掉在 WindowManager 上
- * 搭 `ViewModelStoreOwner` / `SavedStateRegistryOwner` 的一整套脚手架。
+ * 数据直接注入仓储获取，不引入 ViewModel：省掉在 WindowManager 上搭
+ * `ViewModelStoreOwner` / `SavedStateRegistryOwner` 的一整套脚手架。
  */
 @Singleton
 class OverlayCaptureHost @Inject constructor(
@@ -207,21 +197,41 @@ class OverlayCaptureHost @Inject constructor(
 
     // ---------------- 提示条 ----------------
 
-    override suspend fun show(hint: CaptureHint): Boolean {
-        // 正显示确认卡片时**不打扰**：卡片优先级更高（用户可能正在改分类），
-        // 顶掉它会让人白操作一次；提示条本身只是「告知」，错过也无妨。
-        if (shownKind == ShownKind.CARD) {
-            recordHintDelivery(HINT_SKIPPED_CARD)
-            return false
+    override suspend fun show(hint: CaptureHint): Boolean =
+        // 展示与让位判定都在主线程做：`shown` / `shownKind` 只有主线程会写，
+        // 在别处读会与 attachHint 抢同一份状态（提示条本身是从 Default 线程发起的）
+        withContext(Dispatchers.Main.immediate) {
+            // 正显示确认卡片时**不打扰**：卡片优先级更高（用户可能正在改分类），
+            // 顶掉它会让人白操作一次；提示条本身只是「告知」，错过也无妨。
+            if (isLiveCardShowing()) {
+                recordHintDelivery(HINT_SKIPPED_CARD)
+                return@withContext false
+            }
+
+            val signature = hint.signature()
+            if (!shouldShowHint(signature)) {
+                recordHintDelivery(HINT_SKIPPED_DUPLICATE)
+                return@withContext false
+            }
+
+            attachHint(hint)
         }
 
-        val signature = hint.signature()
-        if (!shouldShowHint(signature)) {
-            recordHintDelivery(HINT_SKIPPED_DUPLICATE)
-            return false
-        }
-
-        return withContext(Dispatchers.Main.immediate) { attachHint(hint) }
+    /**
+     * 当前是否真有**活着的**确认卡片在显示；僵尸卡片顺手清掉。
+     *
+     * NOTE: 卡片窗口挂在无障碍服务的窗口 token 上，服务被杀/重启时窗口随之消失，
+     * 而 [shownKind] 只在 [dismiss] 里清 —— 状态会永久停在 `CARD`，此后每条提示条
+     * 都被判成「让位给卡片」而弹不出来（真机表现：有时有、之后再也没有）。
+     * 判活用「服务上下文还在」+「视图仍挂在窗口上」：任一不成立，用户就看不到那张卡片。
+     */
+    private fun isLiveCardShowing(): Boolean {
+        if (shownKind != ShownKind.CARD) return false
+        val window = shown
+        val alive = serviceHolder.serviceContext != null &&
+            window?.view?.isAttachedToWindow == true
+        if (!alive) dismiss()
+        return alive
     }
 
     /**
@@ -463,18 +473,18 @@ class OverlayCaptureHost @Inject constructor(
 private val PillBottomMargin = 112.dp
 
 /**
- * 提示的指纹：用来判断「是不是同一条」，只取对用户可见的字段。
+ * 提示的去重指纹：判断「是不是同一件事」。以 [CaptureHint.key] 为主，取不到才退回 `kind + amount`
+ * —— 后者不能当主：`ALREADY_RECORDED` 按设计不带金额，那样每笔重复账单的指纹都相同，
+ * 10 秒内切换两笔不同账单时第二笔会被误判成重复而不再提示（真机反馈过）。
  */
-private fun CaptureHint.signature(): String = "$kind:$amountCents"
+private fun CaptureHint.signature(): String = "$kind:${key ?: amountCents}"
 
 /**
  * 悬浮层里 Compose 需要的宿主。
  *
- * ⚠️ **三个接口一个都不能少**：这个版本的 Compose 在 `AbstractComposeView` 挂载时会
- * 硬性校验 `ViewTreeSavedStateRegistryOwner`，缺了就直接抛
- * `IllegalStateException: Composed into the View which doesn't propagate ViewTreeSavedStateRegistryOwner`
- * （真机踩过一次）。卡片与提示条都不取 ViewModel、也没有需要保存的状态，
- * 但**框架要的是这几个宿主存在，而不是它们被用到** —— 少一个就会崩。
+ * NOTE: **三个接口一个都不能少**：这个版本的 Compose 在 `AbstractComposeView` 挂载时硬性校验
+ * `ViewTreeSavedStateRegistryOwner`，缺了就直接抛 `IllegalStateException`（真机踩过一次）。
+ * 卡片与提示条都不取 ViewModel、也没有要保存的状态，但**框架要的是这几个宿主存在，而不是被用到**。
  */
 private class OverlayViewOwner :
     LifecycleOwner,

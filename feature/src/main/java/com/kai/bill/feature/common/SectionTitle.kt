@@ -20,7 +20,6 @@ import com.kai.bill.core.design.theme.DarkMode
  * 分区小标题，首页「消费记录」、统计页「分类构成 / 趋势」等处共用。
  *
  * @param text 标题文案
- * @param modifier 外部修饰符
  * @param leadingIcon 可选左侧图标（如时钟）
  */
 @Composable

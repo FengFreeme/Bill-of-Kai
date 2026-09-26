@@ -39,14 +39,10 @@ val KaiBottomBarHeight = 64.dp
 /**
  * 纯色底部导航栏容器。
  *
- * 历史命名保留为 [GlassBottomBar]，实现已改为不透明 `surface`：
- * - 纯色填充，与页面卡片同一套分层语言
- * - 顶部一条细分割线，替代原玻璃高光边
- * - 无半透明、无 blur、无圆角投影
+ * 历史命名保留为 [GlassBottomBar]，实现已是不透明 `surface`：纯色填充 + 顶部细分割线
+ * （替代原玻璃高光边），无半透明、无 blur、无圆角投影。
  *
- * @param modifier 外部修饰符
- * @param bottomInset 系统导航栏高度；由本组件在内部一并铺色，而不是让外部再叠一层
- * @param content 导航项
+ * @param bottomInset 系统导航栏高度；由本组件内部一并铺色，而不是让外部再叠一层
  */
 @Composable
 fun GlassBottomBar(
@@ -55,7 +51,7 @@ fun GlassBottomBar(
     content: @Composable RowScope.() -> Unit
 ) {
     val colors = AppTheme.color
-    // 底栏与卡片共用同一透明度：有背景图时一起变透，不再是一块突兀的实色
+    // WHY: 底栏与卡片共用同一透明度，有背景图时一起变透，不再是一块突兀的实色
     val cardAlpha = LocalCardAlpha.current
 
     Column(
@@ -77,8 +73,8 @@ fun GlassBottomBar(
             verticalAlignment = Alignment.CenterVertically,
             content = content
         )
-        // 系统导航栏区域由**同一层背景**覆盖：若改在外部再叠一层同色，
-        // 半透明时两层叠加处会更实，底栏与屏幕底边之间就会出现一条「缝」。
+        // NOTE: 系统导航栏区域由**同一层背景**覆盖；若在外部再叠一层同色，半透明时叠加处更实，
+        //       底栏与屏幕底边之间会出现一条「缝」
         if (bottomInset > 0.dp) {
             Spacer(modifier = Modifier.fillMaxWidth().height(bottomInset))
         }
@@ -86,16 +82,8 @@ fun GlassBottomBar(
 }
 
 /**
- * 底部导航项。
- *
- * 不用 Material3 `NavigationBarItem`：其默认涟漪与指示器在纯色底栏上过重。
+ * 底部导航项。不用 Material3 `NavigationBarItem`：其默认涟漪与指示器在纯色底栏上过重；
  * 这里仅靠图标/文字颜色表达选中，点击无阴影/水波纹。
- *
- * @param selected 是否选中
- * @param onClick 点击回调
- * @param icon 图标
- * @param label 文字标签
- * @param modifier 外部修饰符
  */
 @Composable
 fun RowScope.GlassBottomBarItem(
@@ -123,7 +111,6 @@ fun RowScope.GlassBottomBarItem(
     ) {
         CompositionLocalProvider(LocalContentColor provides contentColor) {
             icon()
-            // 图标与文案间距略收紧
             Spacer(modifier = Modifier.height(2.dp))
             label()
         }

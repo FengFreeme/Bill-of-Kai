@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** [AccountRepository] 的 Room 实现。注入 [AccountDao]，经 [AccountMapper] 转换。 */
 @Singleton
 class AccountRepositoryImpl @Inject constructor(
     private val accountDao: AccountDao

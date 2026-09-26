@@ -33,6 +33,7 @@ import com.kai.bill.core.design.theme.BillOfKaiTheme
 import com.kai.bill.core.prefs.KaiPrefs
 import com.kai.bill.core.prefs.ThemeConfig
 import com.kai.bill.data.notify.PendingNotificationContract
+import com.kai.bill.feature.onboarding.FirstRunGuideDialog
 import com.kai.bill.feature.whatsnew.ReleaseNote
 import com.kai.bill.feature.whatsnew.ReleaseNotes
 import com.kai.bill.feature.whatsnew.ReleaseNotesDialog
@@ -47,12 +48,10 @@ import kotlinx.coroutines.launch
 /**
  * 主 Activity —— 应用的唯一入口与组合根。
  *
- * 职责最小化：收集 [KaiPrefs.themeConfig]（主题色 / 深模 / 背景图 / 卡片透明度），
- * 装配 [BillOfKaiTheme]，再挂上背景与导航。不写任何 UI 布局、不写业务逻辑。
+ * 只收集 [KaiPrefs.themeConfig] 装配 [BillOfKaiTheme] 并挂上背景与导航，不写 UI 布局与业务逻辑。
  *
- * 额外负责一件系统级的事：把**通知点击带来的目标页面**翻译成本 App 的路由
- * （见 [PendingNotificationContract]）—— 通知由 `data` 模块发出，那里看不到路由表，
- * 翻译职责只能落在 app 层。
+ * 额外把**通知点击带来的目标页面**翻译成本 App 路由（见 [PendingNotificationContract]）：
+ * 通知由 `data` 发出、那里看不到路由表，翻译只能落在 app 层。
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -63,20 +62,28 @@ class MainActivity : ComponentActivity() {
     /**
      * 通知点击要求跳转的目标路由；消费后置空。
      *
-     * 用 [mutableStateOf] 而不是普通字段：`onNewIntent` 可能在 Activity 已在前台时触发
-     * （用户点通知、App 就在后台），此时只有可观察状态才能让已组合的界面响应这次跳转。
+     * 用 [mutableStateOf] 而非普通字段：`onNewIntent` 可能在 Activity 已在前台时触发，
+     * 只有可观察状态才能让已组合的界面响应跳转。
      */
     private val notificationRoute = mutableStateOf<String?>(null)
 
     /**
      * 待展示的更新公告；null 表示不展示。
      *
-     * 用 [mutableStateOf] 而不是普通字段：判断是异步的（要读一次 DataStore 才知道
-     * 这个版本看没看过），结果回来时界面早已组合完成，只有可观察状态才能让卡片出现。
+     * 用 [mutableStateOf] 而非普通字段：判断是异步的（要读一次 DataStore 才知道看过没），
+     * 结果回来时界面早已组合完成，只有可观察状态才能让卡片出现。
      */
     private val releaseNote = mutableStateOf<ReleaseNote?>(null)
 
-    // Android 13+ 需在运行时申请通知权限，否则「已记账」通知不显示
+    /**
+     * 是否展示首次启动的上手引导卡片。
+     *
+     * 与 [releaseNote] 同一类：判断要读一次 DataStore，结果回来时界面早已组合完成，
+     * 只有可观察状态才能让卡片出现。
+     */
+    private val firstRunGuide = mutableStateOf(false)
+
+    // NOTE: Android 13+ 需在运行时申请通知权限，否则「已记账」通知不显示
     private val requestPostNotifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -91,11 +98,19 @@ class MainActivity : ComponentActivity() {
         // 冷启动（进程被杀后点通知 / 从确认卡片点「改分类」）走这里
         notificationRoute.value = intent.toNotificationRoute() ?: intent.toEditBillRoute()
 
-        // 更新公告：装上的版本 ≠ 上次看过并关掉的版本时，弹一次。
-        // 放在冷启动而不是挂在某个页面上：它是**应用级事件**，挂到首页只会让
-        // 「首页要不要负责这件事」变成每次新增页面都要重新回答的问题。
-        // 版本没有对应公告时静默跳过（forVersion 返回 null）
+        // 首次启动：弹一次上手引导卡片，并**跳过更新公告** —— 新装用户要先知道「该做什么」，
+        // 而不是版本变更说明；两张卡片同时出现也会互相盖住（公告浮在最上层）。
+        // 之后每次冷启动才回到「更新公告」那套判断。
         lifecycleScope.launch {
+            if (!prefs.firstLaunchDone()) {
+                prefs.markFirstLaunchDone()
+                firstRunGuide.value = true
+                return@launch
+            }
+            // 更新公告：装上的版本 ≠ 上次看过并关掉的版本时，弹一次。
+            // 放在冷启动而不是挂在某个页面上：它是**应用级事件**，挂到首页只会让
+            // 「首页要不要负责这件事」变成每次新增页面都要重新回答的问题。
+            // 版本没有对应公告时静默跳过（forVersion 返回 null）
             val currentVersion = BuildConfig.VERSION_NAME
             if (prefs.lastSeenReleaseVersion() != currentVersion) {
                 releaseNote.value = ReleaseNotes.forVersion(currentVersion)
@@ -104,7 +119,7 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            // 主题配置变化即重组：设置页换肤 / 换背景 / 调透明度后，整个 App 立即生效
+            // WHY: 主题配置变化即重组，设置页换肤 / 换背景 / 调透明度后整个 App 立即生效
             val config by prefs.themeConfig.collectAsStateWithLifecycle(
                 initialValue = ThemeConfig(),
                 lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -134,6 +149,17 @@ class MainActivity : ComponentActivity() {
                     // 公告浮在最上层（底栏之上）：它是应用级提示，不属于任何一个页面
                     releaseNote.value?.let { note ->
                         ReleaseNotesDialog(note = note, onDismiss = ::dismissReleaseNote)
+                    }
+                    // 上手引导同理，且与公告不会同时出现（首次启动只弹引导，见 onCreate）
+                    if (firstRunGuide.value) {
+                        FirstRunGuideDialog(
+                            onStart = {
+                                firstRunGuide.value = false
+                                // 复用通知那条通路：它本来就是「从外部把用户送到某个页面」
+                                notificationRoute.value = Route.ONBOARDING
+                            },
+                            onDismiss = { firstRunGuide.value = false }
+                        )
                     }
                 }
             }
@@ -183,13 +209,10 @@ private fun Intent?.toNotificationRoute(): String? =
     }
 
 /**
- * 组合根：背景层 + 底栏常驻 + 全屏 NavHost。
+ * 组合根：背景层 + 底栏 + 全屏 NavHost。
  *
- * 布局策略：
- * - [AppBackground] 铺满最底层：无背景图时为纯色，有背景图时为「图 + 遮罩」；
- * - Scaffold 背景透明，让底层的背景图透上来；
- * - 底栏始终挂在底层，进入二级页时不卸载、不收起；
- * - Tab 根页背景透明（透出根部背景图，图像与底栏区域连续），二级页自铺整屏背景盖住底栏。
+ * [AppBackground] 铺满最底层（无图纯色、有图「图 + 遮罩」）；Scaffold 背景透明让背景图透上来；
+ * Tab 根页透明（透出根部背景图，图像与底栏区域连续），二级页自铺整屏背景盖住底栏。
  */
 @Composable
 private fun AppRoot(
@@ -224,8 +247,8 @@ private fun AppRoot(
             ) {
                 MainBottomBar(
                     navController = navController,
-                    // 系统导航栏高度交给底栏「内部」铺色（单层背景）。
-                    // 若在外层再叠一层同色，半透明时会叠出深浅差、露出缝隙。
+                    // NOTE: 系统导航栏高度交给底栏「内部」铺色（单层背景）；
+                    //       若在外层再叠一层同色，半透明时会叠出深浅差、露出缝隙
                     bottomInset = innerPadding.calculateBottomPadding(),
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )

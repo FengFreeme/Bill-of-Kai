@@ -49,7 +49,6 @@ interface BillPendingNotifier {
      *
      * @param amountCents 金额（分）
      * @param reason 为什么进待确认，决定文案
-     * @param matchedKeyword 命中的词，可为 null
      */
     fun notifyPending(amountCents: Long, reason: PendingReason, matchedKeyword: String?)
 }

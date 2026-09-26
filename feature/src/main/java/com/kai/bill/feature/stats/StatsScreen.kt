@@ -67,23 +67,13 @@ import kotlin.math.roundToInt
 /**
  * 统计页：粒度切换 + 筛选入口 → 类型切换 → 概览 → 分类构成 → 排行 → 账户维度 → 趋势。
  *
- * M2：把 M0 的 [EmptyState] 占位换成真实图表（Vico）与完整筛选器。
- *
  * **筛选直接作用于统计**：概览 / 分类构成 / 排行 / 趋势都按筛选结果重算，
- * 所以不再单独列「筛选结果」明细 —— 图表本身就是筛选结果，
- * 再挂一份流水清单会让统计页本末倒置。
+ * 图表本身就是筛选结果，不再单独列「筛选结果」明细。
  *
- * @param uiState 统计页状态
  * @param categories 全部分类（筛选面板候选项 + 流水列表的名称映射）
  * @param accounts 全部账户（同上）
- * @param draft 筛选面板草稿
- * @param showFilterPanel 是否展开筛选面板
- * @param onRangeKindSelected 时间粒度切换回调
  * @param onDateAnchorSelected 在日 / 周 / 月 / 年弹层里选定具体日期回调（毫秒）
- * @param onStatTypeSelected 统计维度（支出 / 收入 / 转账）切换回调
- * @param onCategoryStatsModeSelected 分类统计维度（主分类 / 子分类）切换回调
  * @param onCategoryClick 点击分类排行项：进入该分类的详情页
- * @param modifier 外部修饰符
  */
 @Composable
 fun StatsScreen(
@@ -523,11 +513,9 @@ private fun filterChips(
 }
 
 /**
- * 统计页路由，负责接上 ViewModel。
+ * 统计页路由。
  *
  * @param onCategoryClick 点击分类排行项：进入分类详情
- * @param modifier 外部修饰符
- * @param viewModel 由 Hilt 注入
  */
 @Composable
 fun StatsRoute(

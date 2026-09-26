@@ -29,7 +29,6 @@ import com.kai.bill.domain.model.Account
  * @param accounts 活跃账户列表
  * @param selectedId 选中的账户 ID
  * @param onSelect 选中回调
- * @param modifier 外部修饰符
  */
 @Composable
 fun AccountSelector(

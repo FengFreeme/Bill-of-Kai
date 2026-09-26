@@ -2,7 +2,7 @@
 <!--
   无障碍服务配置。
 
-  四个取舍：
+  取舍说明：
   1. 只收「窗口状态变化」与「窗口内容变化」两类事件 —— 页面切换与页面刷新才是我们要的时机，
      点击 / 滚动 / 文本输入既不必要，也会把隐私面放大到不可接受；
   2. notificationTimeout=100ms 由系统侧节流：一次页面切换常连续触发多次事件，
@@ -16,16 +16,15 @@
      微信同时开好几个窗口（LauncherUI / MMWebViewUI / AppBrand…），包名还都一样，
      只靠焦点窗口容易读到错的那个。
   5. flagIncludeNotImportantViews：**默认会把 `importantForAccessibility=false` 的节点整棵剪掉**。
-     真机上微信账单页的「商户名 + 金额」正是被标成不重要而整块丢失的 ——
-     页面总共只有 99 个节点，远低于遍历上限，却始终抽不到金额，
-     而系统 `uiautomator` 能看到（它的服务带这个 flag）。
-     加上它后节点数会变多，故 MAX_NODES 一并上调。
-     两个 flag 都**不扩大可读的 App 范围**：白名单仍然只放行这几个包。
+     真机上微信账单页的「商户名 + 金额」正是被标成不重要而整块丢失的。
+  6. 本文件只决定「能读到什么」，不决定微信是否放出 MMWebViewUI 的节点树 —— 后者取决于
+     清单里声明的服务类名，别指望改这里解决「微信读不到」。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
-    android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:accessibilityFeedbackType="feedbackAllMask"
+    android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagRequestEnhancedWebAccessibility|flagReportViewIds|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
+    android:canRequestEnhancedWebAccessibility="true"
     android:notificationTimeout="100"
     android:description="@string/accessibility_service_description" />
